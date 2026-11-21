@@ -82,15 +82,29 @@ jobs:
             zaply-focal-build bash -euo pipefail -c '
               script/linux
               # Prefer the clang 18 toolchain installed by script/linux
-              # over the distribution defaults (clang 10 on Ubuntu 20.04).
+              # over the distribution defaults (clang 10 and GCC 9 on
+              # Ubuntu 20.04). The bundled WebRTC code is compiled as
+              # C++20 with clang-only warning flags, and the cc crate
+              # invokes the C++ compiler by its generic names (c++,
+              # g++), so point those names at clang too, not just the
+              # clang binaries themselves.
               for tool in clang clang++ ld.lld llvm-objcopy; do
                 if [ -x "/usr/bin/$tool-18" ]; then
                   ln -sf "/usr/bin/$tool-18" "/usr/local/bin/$tool"
                 fi
               done
+              if [ -x /usr/bin/clang++-18 ]; then
+                ln -sf /usr/bin/clang++-18 /usr/local/bin/c++
+                ln -sf /usr/bin/clang++-18 /usr/local/bin/g++
+              fi
+              if [ -x /usr/bin/clang-18 ]; then
+                ln -sf /usr/bin/clang-18 /usr/local/bin/cc
+                ln -sf /usr/bin/clang-18 /usr/local/bin/gcc
+              fi
               rustc --version
               cargo --version
               export CC="$(command -v clang)"
+              export CXX="$(command -v clang++)"
               export LLD="$(command -v ld.lld)"
               cargo --config .cargo/bundle-config.toml rustc --release --locked \
                 --package zaply --bin zaply -- \
