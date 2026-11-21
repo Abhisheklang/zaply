@@ -2456,7 +2456,7 @@ impl Thread {
         if let Some(model) = self.model() {
             crate::usage_stats::record_usage(
                 &model.provider_id().to_string(),
-                &model.id().to_string(),
+                &model.id().0.to_string(),
                 usage_delta,
             );
         }

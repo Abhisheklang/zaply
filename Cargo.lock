@@ -12071,6 +12071,7 @@ dependencies = [
  "gpui",
  "menu",
  "notifications",
+ "paths",
  "picker",
  "project",
  "schemars 1.0.4",
