@@ -27,6 +27,10 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: zaply_collab_test
+          # This database exists only for the duration of the job. Trust
+          # authentication avoids password plumbing between the service
+          # container and the smoke test.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
@@ -71,7 +75,7 @@ jobs:
       - name: Smoke-test the server
         env:
           HTTP_PORT: "8080"
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/zaply_collab_test
+          DATABASE_URL: postgres://postgres@localhost:5432/zaply_collab_test
           DATABASE_MAX_CONNECTIONS: "5"
           ZAPLY_ENVIRONMENT: development
         run: |
