@@ -2317,6 +2317,7 @@ fn apply_large_monorepo_mode(workspace: &mut Workspace, cx: &mut Context<Workspa
 
         let mut exclusions: Vec<String> = content
             .project
+            .worktree
             .file_scan_exclusions
             .take()
             .map(|splicing_vec| splicing_vec.0)
@@ -2339,7 +2340,7 @@ fn apply_large_monorepo_mode(workspace: &mut Workspace, cx: &mut Context<Workspa
                 exclusions.push(extra.to_string());
             }
         }
-        content.project.file_scan_exclusions =
+        content.project.worktree.file_scan_exclusions =
             Some(settings::settings_content::SplicingVec(exclusions));
     });
     settings_transfer_toast(
