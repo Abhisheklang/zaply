@@ -2705,30 +2705,23 @@ impl CollabPanel {
     fn render_signed_out(&mut self, cx: &mut Context<Self>) -> Div {
         let collab_blurb = "Work with your team in realtime with collaborative editing, voice, shared notes and more.";
 
-        // Two distinct "not connected" states:
-        //   - Authenticated (has credentials): user just needs to connect.
-        //   - Unauthenticated (no credentials): user needs to sign in via GitHub.
+        // Zaply has no hosted collaboration service and no accounts, so
+        // there is nothing to sign in to. Collaboration runs against a
+        // server the user hosts themselves (see COLLABORATION.md in the
+        // Zaply repository). Two distinct "not connected" states:
+        //   - Authenticated (has credentials for a server): user just
+        //     needs to connect.
+        //   - Unauthenticated: explain how to point Zaply at a
+        //     self-hosted server instead of offering a sign-in button.
         let is_authenticated = self.client.user_id().is_some();
         let status = *self.client.status().borrow();
         let is_busy = status.is_signing_in();
 
-        let (button_id, button_label, button_icon) = if is_authenticated {
-            (
-                "connect",
-                if is_busy { "Connecting…" } else { "Connect" },
-                IconName::Public,
-            )
-        } else {
-            (
-                "sign_in",
-                if is_busy {
-                    "Signing in…"
-                } else {
-                    "Sign In with GitHub"
-                },
-                IconName::Github,
-            )
-        };
+        let (button_id, button_label, button_icon) = (
+            "connect",
+            if is_busy { "Connecting…" } else { "Connect" },
+            IconName::Public,
+        );
 
         v_flex()
             .p_4()
@@ -2738,8 +2731,19 @@ impl CollabPanel {
             .justify_center()
             .items_center()
             .child(Label::new(collab_blurb).color(Color::Muted))
-            .child(
-                Button::new(button_id, button_label)
+            .when(!is_authenticated, |this| {
+                this.child(
+                    Label::new(
+                        "Zaply does not run a collaboration service. To collaborate, \
+                        host the Zaply collaboration server yourself and set its \
+                        address as the server URL in Settings, then restart Zaply.",
+                    )
+                    .color(Color::Muted),
+                )
+            })
+            .when(is_authenticated, |this| {
+                this.child(
+                    Button::new(button_id, button_label)
                     .label_size(LabelSize::Small)
                     .start_icon(Icon::new(button_icon).color(Color::Muted))
                     .style(ButtonStyle::Outlined)
@@ -2756,7 +2760,8 @@ impl CollabPanel {
                         })
                         .detach()
                     })),
-            )
+                )
+            })
     }
 
     fn render_list_entry(

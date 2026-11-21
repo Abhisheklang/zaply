@@ -1,0 +1,104 @@
+name: Build Zaply collaboration server
+
+# The collaboration server is a separate, optional component. It is not
+# bundled with the editor and Zaply does not run a hosted instance.
+# This workflow proves the server still builds from this repository and
+# answers its health check against a real PostgreSQL database. It runs
+# only when the server or its protocol crates change.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "crates/collab/**"
+      - "crates/rpc/**"
+      - "crates/proto/**"
+      - ".github/workflows/build-zaply-collab.yml"
+  workflow_dispatch:
+
+jobs:
+  build-collab-server:
+    name: Build and smoke-test the collaboration server
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: zaply_collab_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install system dependencies
+        run: script/linux
+
+      - name: Build the collaboration server
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
+          CARGO_TERM_COLOR: never
+          CARGO_INCREMENTAL: "0"
+        run: cargo build --release --locked --package collab --bin collab
+
+      - name: Smoke-test the server
+        env:
+          HTTP_PORT: "8080"
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/zaply_collab_test
+          DATABASE_MAX_CONNECTIONS: "5"
+          ZAPLY_ENVIRONMENT: development
+        run: |
+          ./target/release/collab version
+          ./target/release/collab serve api &
+          server_pid=$!
+          trap 'kill $server_pid 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8080/healthz > /dev/null; then
+              echo "The collaboration server answered its health check."
+              curl --silent http://127.0.0.1:8080/
+              echo
+              exit 0
+            fi
+            if ! kill -0 $server_pid 2>/dev/null; then
+              echo "The collaboration server exited before answering."
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "The collaboration server did not answer its health check in time."
+          exit 1
+
+      - name: Upload the server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: zaply-collab-server-linux-x86_64
+          path: target/release/collab
+          if-no-files-found: error
+          retention-days: 7

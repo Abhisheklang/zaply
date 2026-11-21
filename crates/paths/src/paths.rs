@@ -396,6 +396,13 @@ pub fn snippets_dir() -> &'static PathBuf {
     SNIPPETS_DIR.get_or_init(|| config_dir().join("snippets"))
 }
 
+/// Returns the path to the custom theme file that the theme studio
+/// action creates and opens for editing.
+pub fn custom_theme_file() -> &'static PathBuf {
+    static CUSTOM_THEME_FILE: OnceLock<PathBuf> = OnceLock::new();
+    CUSTOM_THEME_FILE.get_or_init(|| themes_dir().join("my-custom-theme.json"))
+}
+
 /// Returns the path to the contexts directory.
 ///
 /// This is where the prompts for use with the Assistant are stored.

@@ -141,6 +141,12 @@ actions!(
         NewProjectFromTemplate,
         /// Show the local-only API usage counts.
         OpenApiUsage,
+        /// Create or open a custom theme file for editing, with live preview.
+        CreateCustomTheme,
+        /// Apply the low-end hardware settings profile.
+        EnableLowEndHardwareMode,
+        /// Apply the large monorepo settings profile.
+        EnableLargeMonorepoMode,
         /// Opens project-specific settings file.
         OpenProjectSettingsFile,
         /// Opens the tasks panel.
@@ -258,6 +264,30 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &OpenApiUsage, cx| {
         with_active_or_new_workspace(cx, |workspace, window, cx| {
             open_api_usage(workspace, window, cx);
+        });
+    });
+
+    cx.on_action(|_: &EnableLowEndHardwareMode, cx| {
+        with_active_or_new_workspace(cx, |workspace, _, cx| {
+            apply_low_end_hardware_mode(workspace, cx);
+        });
+    });
+
+    cx.on_action(|_: &EnableLargeMonorepoMode, cx| {
+        with_active_or_new_workspace(cx, |workspace, _, cx| {
+            apply_large_monorepo_mode(workspace, cx);
+        });
+    });
+
+    cx.on_action(|_: &CreateCustomTheme, cx| {
+        let asset_source = cx.asset_source().clone();
+        with_active_or_new_workspace(cx, |_, window, cx| {
+            open_settings_file(
+                paths::custom_theme_file(),
+                move || custom_theme_template(&asset_source).into(),
+                window,
+                cx,
+            );
         });
     });
 
@@ -2222,6 +2252,101 @@ fn open_api_usage(workspace: &mut Workspace, window: &mut Window, cx: &mut Conte
         .await;
     })
     .detach();
+}
+
+/// The starting point for a user-created theme: a copy of the bundled
+/// One theme family with the names replaced. The themes directory is
+/// watched, so once the user selects the new theme in the theme
+/// selector, edits to the file apply live.
+fn custom_theme_template(asset_source: &Arc<dyn gpui::AssetSource>) -> String {
+    let bundled = asset_source
+        .load("themes/one/one.json")
+        .ok()
+        .flatten()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    match bundled {
+        Some(text) => text
+            .replace("\"name\": \"One\"", "\"name\": \"My Custom Theme\"")
+            .replace("\"One Dark\"", "\"My Custom Theme\"")
+            .replace("\"One Light\"", "\"My Custom Theme Light\""),
+        None => "{\n  \"name\": \"My Custom Theme\",\n  \"author\": \"\",\n  \"themes\": [\n    {\n      \"name\": \"My Custom Theme\",\n      \"appearance\": \"dark\",\n      \"style\": {\n        \"background\": \"#1e1e2eff\",\n        \"text\": \"#cdd6f4ff\"\n      }\n    }\n  ]\n}\n".to_string(),
+    }
+}
+
+/// Low-end hardware mode: a settings profile that reduces continuous
+/// rendering and popover work on machines with weak GPUs or CPUs. It
+/// turns off cursor blinking and hover popovers and hides the minimap.
+/// The changes are written to the user's settings file like any other
+/// setting change, and can be reverted there.
+fn apply_low_end_hardware_mode(workspace: &mut Workspace, cx: &mut Context<Workspace>) {
+    let fs = workspace.app_state().fs.clone();
+    settings::update_settings_file(fs, cx, |content, _cx| {
+        content.editor.cursor_blink = Some(false);
+        content.editor.hover_popover_enabled = Some(false);
+        content.editor.minimap.get_or_insert_with(Default::default).show =
+            Some(settings::settings_content::ShowMinimap::Never);
+    });
+    settings_transfer_toast(
+        workspace,
+        "Low-end hardware mode applied: cursor blinking and hover popovers are off, \
+         and the minimap is hidden. Undo any of these in your settings file."
+            .to_string(),
+        true,
+        cx,
+    );
+}
+
+/// Large monorepo mode: a settings profile for repositories with very
+/// large working trees. It turns off inline git blame, debounces git
+/// gutter updates, and makes sure the file scan exclusions cover the
+/// folders that dominate monorepos, so scanning, search, and indexing
+/// skip them. Existing user exclusions are kept.
+fn apply_large_monorepo_mode(workspace: &mut Workspace, cx: &mut Context<Workspace>) {
+    let fs = workspace.app_state().fs.clone();
+    settings::update_settings_file(fs, cx, |content, _cx| {
+        let git_settings = content.git.get_or_insert_with(Default::default);
+        git_settings
+            .inline_blame
+            .get_or_insert_with(Default::default)
+            .enabled = Some(false);
+        git_settings.gutter_debounce = Some(1000);
+
+        let mut exclusions: Vec<String> = content
+            .project
+            .file_scan_exclusions
+            .take()
+            .map(|splicing_vec| splicing_vec.0)
+            .unwrap_or_else(|| {
+                vec![settings::settings_content::SplicingVec::REST.to_string()]
+            });
+        for extra in [
+            "**/.git",
+            "**/node_modules",
+            "**/target",
+            "**/dist",
+            "**/build",
+            "**/.cache",
+            "**/vendor",
+            "**/.next",
+            "**/.turbo",
+            "**/out",
+        ] {
+            if !exclusions.iter().any(|entry| entry == extra) {
+                exclusions.push(extra.to_string());
+            }
+        }
+        content.project.file_scan_exclusions =
+            Some(settings::settings_content::SplicingVec(exclusions));
+    });
+    settings_transfer_toast(
+        workspace,
+        "Large monorepo mode applied: inline blame is off, git gutter updates are \
+         debounced, and scan exclusions cover dependency and build folders. \
+         Undo any of these in your settings file."
+            .to_string(),
+        true,
+        cx,
+    );
 }
 
 fn open_log_file(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {

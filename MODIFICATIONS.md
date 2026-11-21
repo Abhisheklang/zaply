@@ -43,6 +43,53 @@ All changes are dated 2026-11-21 and are summarised here:
 - README.md was rewritten as a Zaply product document, and install.sh
   was added.
 
+## Changes after 1.0 (the 3.0 development pass, also dated 2026-11-21)
+
+- Agent safety layer: the shipped default settings now require
+  confirmation before destructive terminal commands and file deletion,
+  never allow the agent to edit secret files (`.env`, key and
+  certificate files), and allow read-only inspection commands without a
+  prompt. A persistent audit log of agent tool calls and permission
+  decisions is kept in the data directory and viewable in the app
+  (Open Agent Audit Log). Python defaults were tuned (4-space tabs,
+  88-column lines, format on save).
+- Linux build widened: the Linux packages are now built inside an
+  Ubuntu 20.04 container (glibc 2.31 baseline) instead of on the
+  current runner image, and the built binary's maximum required GLIBC
+  version is printed in the build log.
+- Windows and macOS builds added: GitHub Actions workflows build an
+  Inno Setup installer for Windows 10 and newer and DMGs for macOS 12
+  and newer (deployment target verified from the built binary).
+  script/bundle-windows.ps1 now locates Visual Studio with vswhere
+  instead of a hardcoded edition path.
+- Migration tools: a VS Code keybindings converter (settings crate)
+  and an Import VS Code Keybindings action; Export Settings and Import
+  Settings actions that move settings and keymap between installs as a
+  single file, keeping backups; a New Project from Template action and
+  four bundled templates under assets/templates/; MIGRATION.md
+  documents the flows.
+- AI depth: the agent profiles are presented as Ask, Edit, and Agent;
+  token usage reported by providers is accumulated locally per
+  provider, model, and day (agent crate) and shown by an Open API Usage
+  action. The counts never leave the device.
+- Extension packs: four curated pack manifests under extension-packs/,
+  a script/install-extension-pack downloader, and EXTENSION_PACKS.md
+  explaining the dev-extension mechanism and its limits.
+- Collaboration: the collaboration panel no longer offers sign-in to a
+  hosted service that does not exist; it explains self-hosting instead.
+  The collab server gained a CI workflow that builds it and verifies
+  its health check against PostgreSQL, and COLLABORATION.md documents
+  running it and pointing the editor at it via the server_url setting.
+- Extension API and themes: EXTENSION_API.md documents the extension
+  API surface (version 0.8.0, WIT worlds, the Extension trait). A
+  Create Custom Theme action starts a user theme from the bundled One
+  family in the themes directory, which is watched for live preview.
+- Performance: the default file scan exclusions now cover dependency
+  and build-output folders; script/zaply-benchmarks measures startup,
+  large-file open, and project search; BENCHMARKS.md records the
+  measured results; Enable Low-End Hardware Mode and Enable Large
+  Monorepo Mode actions apply named settings profiles.
+
 ## Changed files
 
 The rebrand and the total rename touched files across the entire tree:

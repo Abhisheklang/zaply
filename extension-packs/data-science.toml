@@ -1,0 +1,16 @@
+# Zaply extension pack: Data Science
+
+name = "Data Science"
+description = "Languages and document tooling for data work, on top of the Python, Jupyter notebook, and SQL support already built into Zaply."
+
+extensions = [
+    "r",
+    "julia",
+    "sql",
+    "csv",
+    "dbt",
+    "quarto",
+    "latex",
+    "mermaid",
+    "marksman",
+]

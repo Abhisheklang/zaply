@@ -51,6 +51,9 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
       - name: Build the Ubuntu 20.04 build image
         run: docker build -t zaply-focal-build -f Dockerfile-focal-build .
 

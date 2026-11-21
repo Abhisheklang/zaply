@@ -1865,6 +1865,22 @@
     "**/Thumbs.db",
     "**/.classpath",
     "**/.settings",
+    // Dependency and build-output folders are excluded from file
+    // scanning, project search, and indexing by default. They are the
+    // largest folders in most projects and almost never what a search
+    // is looking for. Remove an entry here if you need to search inside
+    // one of these folders.
+    "**/node_modules",
+    "**/target",
+    "**/.venv",
+    "**/venv",
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/dist",
+    "**/build",
+    "**/.next",
+    "**/.cache",
   ],
   // Files or globs of files that will be included by Zaply, even when ignored by git. This is useful
   // for files that are not tracked by git, but are still important to your project. Note that globs

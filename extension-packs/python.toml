@@ -1,0 +1,20 @@
+# Zaply extension pack: Python
+#
+# Install with: script/install-extension-pack python
+# The script downloads these extensions from the public extension
+# registry; you then add them in the Extensions panel with
+# "Install Dev Extension". See EXTENSION_PACKS.md for how this works
+# and why the last step is manual.
+
+name = "Python"
+description = "Snippets and framework support for Python development, on top of the Python language server, linter, debugger, and Jupyter support already built into Zaply."
+
+extensions = [
+    "python-snippets",
+    "django",
+    "django-snippets",
+    "flask-snippets",
+    "fastapi-snippets",
+    "fastapi-lsp",
+    "cython",
+]

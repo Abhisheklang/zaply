@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Download the extensions of a Zaply extension pack.
+
+Zaply has no hosted extension gallery, so packs work with the extension
+mechanism that does exist: dev extensions, which Zaply builds from a
+local folder of extension source code. This script does the fetching:
+
+  1. It reads a pack manifest from extension-packs/<pack>.toml.
+  2. It clones the public extension registry (blobless, no checkout)
+     into a cache folder and checks out just the extensions the pack
+     names, verifying each one exists in the registry first.
+  3. It prints the folder of each downloaded extension.
+
+The final step is manual, because installing a dev extension is a user
+action in the app: open the Extensions panel, choose "Install Dev
+Extension", and pick each printed folder. Zaply then builds the
+extension (this needs a Rust toolchain with the wasm32-wasip1 target)
+and keeps it installed across restarts. Re-running this script updates
+the downloaded sources; use "Rebuild Dev Extension" in the panel
+afterwards to pick up changes.
+
+Usage:
+    script/install-extension-pack --list
+    script/install-extension-pack python
+    script/install-extension-pack web --cache-dir /path/to/cache
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+import tomllib
+
+REGISTRY_URL = "https://github.com/zed-industries/extensions"
+
+
+def default_cache_dir():
+    data_home = os.environ.get(
+        "XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")
+    )
+    return os.path.join(data_home, "zaply", "extension-pack-sources")
+
+
+def run(command, **kwargs):
+    print("+", " ".join(command))
+    return subprocess.run(command, **kwargs)
+
+
+def load_pack(packs_dir, pack_name):
+    path = os.path.join(packs_dir, f"{pack_name}.toml")
+    if not os.path.isfile(path):
+        print(f"error: no pack named {pack_name!r} in {packs_dir}", file=sys.stderr)
+        return None
+    with open(path, "rb") as handle:
+        return tomllib.load(handle)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("pack", nargs="?", help="Pack name, for example: python")
+    parser.add_argument(
+        "--list", action="store_true", help="List the available packs and exit"
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=default_cache_dir(),
+        help="Where extension sources are downloaded",
+    )
+    arguments = parser.parse_args()
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    packs_dir = os.path.join(script_dir, "..", "extension-packs")
+
+    if arguments.list or not arguments.pack:
+        for file_name in sorted(os.listdir(packs_dir)):
+            if file_name.endswith(".toml"):
+                pack = load_pack(packs_dir, file_name[: -len(".toml")])
+                if pack:
+                    print(f"{file_name[:-len('.toml')]:14} {pack.get('name', '')}: "
+                          f"{pack.get('description', '')}")
+        return 0
+
+    pack = load_pack(packs_dir, arguments.pack)
+    if pack is None:
+        return 1
+    extension_ids = pack.get("extensions", [])
+    if not extension_ids:
+        print("error: the pack lists no extensions", file=sys.stderr)
+        return 1
+
+    if run(["git", "--version"]).returncode != 0:
+        print("error: git is required to download extension sources", file=sys.stderr)
+        return 1
+
+    registry_dir = os.path.join(arguments.cache_dir, "extensions-registry")
+    if not os.path.isdir(os.path.join(registry_dir, ".git")):
+        os.makedirs(arguments.cache_dir, exist_ok=True)
+        result = run(
+            [
+                "git",
+                "clone",
+                "--filter=blob:none",
+                "--no-checkout",
+                REGISTRY_URL,
+                registry_dir,
+            ]
+        )
+        if result.returncode != 0:
+            print("error: could not clone the extension registry", file=sys.stderr)
+            return 1
+    else:
+        run(["git", "-C", registry_dir, "fetch", "origin", "main"])
+
+    # Verify the requested extensions exist before downloading anything.
+    listing = run(
+        ["git", "-C", registry_dir, "ls-tree", "--name-only", "origin/main", "extensions/"],
+        capture_output=True,
+        text=True,
+    )
+    known = set()
+    if listing.returncode == 0:
+        known = {
+            line.removeprefix("extensions/").strip()
+            for line in listing.stdout.splitlines()
+            if line.strip()
+        }
+    missing = [ext for ext in extension_ids if known and ext not in known]
+    if missing:
+        print(
+            "error: these extensions are not in the registry: " + ", ".join(missing),
+            file=sys.stderr,
+        )
+        return 1
+
+    failed = []
+    installed_paths = []
+    for extension_id in extension_ids:
+        result = run(
+            [
+                "git",
+                "-C",
+                registry_dir,
+                "submodule",
+                "update",
+                "--init",
+                "--depth",
+                "1",
+                "--",
+                f"extensions/{extension_id}",
+            ]
+        )
+        extension_path = os.path.join(registry_dir, "extensions", extension_id)
+        if result.returncode != 0 or not os.path.isfile(
+            os.path.join(extension_path, "extension.toml")
+        ):
+            failed.append(extension_id)
+        else:
+            installed_paths.append(extension_path)
+
+    print()
+    print(f"Pack: {pack.get('name', arguments.pack)}")
+    if installed_paths:
+        print("Downloaded extension sources:")
+        for path in installed_paths:
+            print(f"  {path}")
+        print()
+        print("To install them in Zaply:")
+        print("  1. Open the Extensions panel (command palette: \"extensions: open\").")
+        print("  2. Choose \"Install Dev Extension\" and pick each folder above.")
+        print("  3. Zaply builds each extension locally; this needs a Rust")
+        print("     toolchain with the wasm32-wasip1 target installed.")
+    if failed:
+        print("Could not download: " + ", ".join(failed), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
