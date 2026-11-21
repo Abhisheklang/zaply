@@ -1,0 +1,184 @@
+# Builds Zaply for Linux and packages it as a .deb, an AppImage and a
+# tar.gz. Runs on standard GitHub-hosted runners only.
+#
+# - On a version tag (v*): the packages are attached to a GitHub release.
+# - On manual dispatch: the packages are kept as a short-retention
+#   workflow artifact.
+name: Build Zaply for Linux
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  # sccache with the GitHub Actions cache backend: compiler outputs are
+  # cached between runs so rebuilds only recompile what changed. The
+  # Actions cache is capped at 10 GB per repository with 7-day eviction
+  # of unused entries, which suits sccache's per-object storage (a full
+  # target/ directory snapshot would exceed the cap for this workspace).
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  build-linux:
+    name: Build and package Zaply for Linux (x86_64)
+    # Pinned to Ubuntu 24.04 on purpose: the binaries link against the
+    # runner's glibc, and building on a newer runner produces binaries
+    # that refuse to start on older LTS systems. Ubuntu 22.04 was tried
+    # and cannot build the bundled WebRTC code: its GCC 11 rejects
+    # headers that GCC 13 (24.04) accepts via -Wno-changes-meaning.
+    # Trade-off: the packages require Ubuntu 24.04 or newer (glibc 2.39).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Check out Zaply
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Install Linux build dependencies
+        run: script/linux
+
+      - name: Show Rust toolchain
+        run: |
+          rustup show
+          cargo --version
+          rustc --version
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Build Zaply editor and command-line tool (release)
+        run: |
+          export CC="$(command -v clang)"
+          export LLD="$(command -v ld.lld || command -v ld.lld-18)"
+          cargo --config .cargo/bundle-config.toml rustc --release --locked \
+            --package zaply --bin zaply -- \
+            -C linker="$CC" -C llvm-args=-addrsig -C link-arg=-fuse-ld=lld \
+            -C link-arg=--ld-path="$LLD" -C link-arg=-Wl,--icf=safe
+          cargo --config .cargo/bundle-config.toml build --release --locked \
+            --package cli
+
+      - name: Generate the third-party licenses file
+        run: script/generate-licenses
+
+      - name: Assemble the Zaply application tree
+        run: |
+          set -euo pipefail
+          APP_DIR="$PWD/zaply.app"
+          mkdir -p "$APP_DIR/bin" "$APP_DIR/libexec" "$APP_DIR/lib" \
+            "$APP_DIR/share/icons/hicolor/512x512/apps" \
+            "$APP_DIR/share/icons/hicolor/1024x1024/apps" \
+            "$APP_DIR/share/applications"
+          llvm-objcopy --strip-unneeded target/release/zaply "$APP_DIR/libexec/zaply-editor" \
+            || cp target/release/zaply "$APP_DIR/libexec/zaply-editor"
+          llvm-objcopy --strip-debug --discard-all target/release/cli "$APP_DIR/bin/zaply" \
+            || cp target/release/cli "$APP_DIR/bin/zaply"
+          # Bundle the shared libraries the editor needs, except the glibc
+          # and GLib families, which must come from the host system.
+          ldd target/release/zaply | cut -d' ' -f3 | \
+            grep -v '\<\(libc.so\|libgcc_s.so\|libm.so\|libpthread.so\|libdl.so\|libasound.so\)' | \
+            grep -v '\<\(libglib-2.0.so\|libgobject-2.0.so\|libgio-2.0.so\|libgmodule-2.0.so\|libpcre.so\|libpcre2-8.so\|libmount.so\|libblkid.so\|libselinux.so\|libffi.so\|libresolv.so\|libz.so\)' | \
+            while read -r lib; do [ -f "$lib" ] && cp "$lib" "$APP_DIR/lib/"; done
+          cp crates/zaply/resources/app-icon.png "$APP_DIR/share/icons/hicolor/512x512/apps/zaply.png"
+          cp crates/zaply/resources/app-icon@2x.png "$APP_DIR/share/icons/hicolor/1024x1024/apps/zaply.png"
+          export DO_STARTUP_NOTIFY="true" APP_CLI="zaply" APP_ICON="zaply" APP_ARGS="%U" \
+            APP_NAME="Zaply" APP_ID="io.github.Abhisheklang.zaply"
+          envsubst < crates/zaply/resources/zaply.desktop.in \
+            > "$APP_DIR/share/applications/io.github.Abhisheklang.zaply.desktop"
+          cp assets/licenses.md "$APP_DIR/licenses.md"
+          ls -R "$APP_DIR" | head -50
+
+      - name: Package Zaply as a tar.gz
+        run: |
+          tar -czf zaply-linux-x86_64.tar.gz -C "$PWD" zaply.app
+          ls -lh zaply-linux-x86_64.tar.gz
+
+      - name: Package Zaply as a .deb
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then VERSION="1.0.0"; fi
+          PKG="$PWD/zaply-deb"
+          mkdir -p "$PKG/DEBIAN" "$PKG/usr/lib" "$PKG/usr/bin" \
+            "$PKG/usr/share/applications" "$PKG/usr/share/icons/hicolor/512x512/apps" \
+            "$PKG/usr/share/icons/hicolor/1024x1024/apps"
+          cp -r zaply.app "$PKG/usr/lib/zaply"
+          ln -s ../lib/zaply/bin/zaply "$PKG/usr/bin/zaply"
+          cp zaply.app/share/applications/io.github.Abhisheklang.zaply.desktop "$PKG/usr/share/applications/"
+          cp zaply.app/share/icons/hicolor/512x512/apps/zaply.png "$PKG/usr/share/icons/hicolor/512x512/apps/"
+          cp zaply.app/share/icons/hicolor/1024x1024/apps/zaply.png "$PKG/usr/share/icons/hicolor/1024x1024/apps/"
+          cat > "$PKG/DEBIAN/control" <<EOF
+          Package: zaply
+          Version: $VERSION
+          Section: editors
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Zaply Contributors
+          Depends: libc6, libstdc++6, libgcc-s1, libglib2.0-0t64 | libglib2.0-0, libmount1, libblkid1, libselinux1, libffi8, libpcre2-8-0
+          Description: Zaply - a fast, open source code editor
+           Zaply is a fast, open source code editor built for speed:
+           GPU-accelerated editing, a built-in AI agent panel that works with
+           your own API key or local models, no account and no telemetry.
+           100% open source under the GPL.
+          EOF
+          dpkg-deb --build --root-owner-group "$PKG" zaply-linux-x86_64.deb
+          ls -lh zaply-linux-x86_64.deb
+
+      - name: Package Zaply as an AppImage
+        run: |
+          set -euo pipefail
+          APPDIR="$PWD/Zaply.AppDir"
+          mkdir -p "$APPDIR"
+          # Standard AppImage layout: the application tree lives under
+          # usr/, with bin/, libexec/, lib/ and share/ inside it, so the
+          # binaries' library paths resolve exactly as in the .deb.
+          cp -r zaply.app "$APPDIR/usr"
+          cp zaply.app/share/applications/io.github.Abhisheklang.zaply.desktop "$APPDIR/"
+          cp crates/zaply/resources/app-icon@2x.png "$APPDIR/zaply.png"
+          cat > "$APPDIR/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/zaply" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool "$APPDIR" zaply-linux-x86_64.AppImage
+          ls -lh zaply-linux-x86_64.AppImage
+
+      - name: Upload packages as a workflow artifact (manual runs)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zaply-linux-x86_64-packages
+          path: |
+            zaply-linux-x86_64.deb
+            zaply-linux-x86_64.AppImage
+            zaply-linux-x86_64.tar.gz
+          retention-days: 3
+
+      - name: Publish packages on the GitHub release (version tags)
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Zaply $GITHUB_REF_NAME" \
+            --notes "Zaply $GITHUB_REF_NAME for Linux (x86_64). Download the .deb for Debian and Ubuntu, the AppImage for any recent Linux distribution, or the tar.gz to run without installing. See the README for install instructions." \
+            zaply-linux-x86_64.deb zaply-linux-x86_64.AppImage zaply-linux-x86_64.tar.gz \
+          || gh release upload "$GITHUB_REF_NAME" \
+            zaply-linux-x86_64.deb zaply-linux-x86_64.AppImage zaply-linux-x86_64.tar.gz --clobber

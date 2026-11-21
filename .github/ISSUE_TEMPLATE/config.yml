@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-issue-config.json
+blank_issues_enabled: false
+contact_links:
+  - name: Feature request
+    url: https://github.com/Abhisheklang/zaply/issues
+    about: To request a feature, open a new issue and describe what you would like Zaply to do.

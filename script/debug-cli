@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+cargo build -p zaply && cargo run -p cli -- --foreground --zaply=${CARGO_TARGET_DIR:-target}/debug/zaply "$@"

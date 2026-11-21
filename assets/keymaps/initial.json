@@ -1,0 +1,22 @@
+// Zaply keymap
+//
+// For information on binding keys, see the Zaply
+// documentation in the project repository:
+// https://github.com/Abhisheklang/zaply
+//
+// To see the default key bindings run `Open Default Keymap`
+// from the command palette.
+[
+  {
+    "context": "Workspace",
+    "bindings": {
+      // "shift shift": "file_finder::Toggle"
+    },
+  },
+  {
+    "context": "Editor && vim_mode == insert",
+    "bindings": {
+      // "j k": "vim::NormalBefore"
+    },
+  },
+]

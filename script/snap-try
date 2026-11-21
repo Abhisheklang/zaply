@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# This script is intended to be run after `snap-build`.
+#
+# It expects the `zaply.snap` built by `snap-build` to be in the current
+# directory.
+#
+# This will uninstall the current `zaply` snap, replacing it with a snap
+# that directly uses the `snap/unpacked` directory.
+
+set -euxo pipefail
+
+# Rerun as root
+[ "$UID" -eq 0 ] || exec sudo bash -e "$0" "$@"
+
+snap remove zaply || true
+mkdir -p snap
+rm -rf snap/unpacked
+unsquashfs -dest snap/unpacked zaply.snap
+snap try --classic snap/unpacked

@@ -1,0 +1,256 @@
+use anyhow::{Context, Result};
+use clap::Parser;
+use gh_workflow::Workflow;
+use std::fs;
+use std::path::{Path, PathBuf};
+use strum::IntoEnumIterator;
+
+use crate::tasks::workflow_checks::{self};
+
+mod after_release;
+mod autofix_pr;
+mod bump_patch_version;
+mod bump_zaply_version;
+mod cherry_pick;
+mod compliance_check;
+mod danger;
+mod deploy_collab;
+mod deploy_docs;
+mod extension_auto_bump;
+mod extension_bump;
+mod extension_tests;
+mod extension_workflow_rollout;
+mod extensions;
+mod nix_build;
+mod publish_extension_cli;
+mod release_nightly;
+mod run_bundling;
+
+mod release;
+mod run_tests;
+mod runners;
+mod steps;
+mod vars;
+
+#[derive(Clone)]
+pub(crate) struct GitSha(String);
+
+impl AsRef<str> for GitSha {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::str::FromStr for GitSha {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        const GIT_SHA_LENGTH: usize = 40;
+        if value.len() != GIT_SHA_LENGTH {
+            return Err(format!(
+                "Git SHA has wrong length! \
+                Only SHAs with a full length of {GIT_SHA_LENGTH} are supported, found {len} characters.",
+                len = value.len()
+            ));
+        }
+        if !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("Not a valid Git SHA".to_owned());
+        }
+        Ok(Self(value.to_owned()))
+    }
+}
+
+#[allow(
+    clippy::disallowed_methods,
+    reason = "This runs only in a CLI environment"
+)]
+fn parse_ref(value: &str) -> Result<GitSha, String> {
+    let sha = value.parse::<GitSha>()?;
+    let output = std::process::Command::new("git")
+        .args([
+            "rev-parse",
+            "--quiet",
+            "--verify",
+            &format!("{}^{{commit}}", sha.as_ref()),
+        ])
+        .output()
+        .map_err(|_| "Failed to spawn Git command to verify SHA".to_owned())?;
+    if !output.status.success() {
+        return Err(format!(
+            "SHA {} is not a valid Git SHA within this repository!",
+            sha.as_ref()
+        ));
+    }
+    Ok(sha)
+}
+
+#[derive(Parser)]
+pub(crate) struct GenerateWorkflowArgs {
+    #[arg(value_parser = parse_ref)]
+    /// The Git SHA to use when invoking this
+    pub(crate) sha: Option<GitSha>,
+}
+
+enum WorkflowSource {
+    Contextless(fn() -> Workflow),
+    WithContext(fn(&GenerateWorkflowArgs) -> Workflow),
+}
+
+struct WorkflowFile {
+    source: WorkflowSource,
+    r#type: WorkflowType,
+}
+
+impl WorkflowFile {
+    fn zaply(f: fn() -> Workflow) -> WorkflowFile {
+        WorkflowFile {
+            source: WorkflowSource::Contextless(f),
+            r#type: WorkflowType::Zaply,
+        }
+    }
+
+    fn extension(f: fn(&GenerateWorkflowArgs) -> Workflow) -> WorkflowFile {
+        WorkflowFile {
+            source: WorkflowSource::WithContext(f),
+            r#type: WorkflowType::ExtensionCi,
+        }
+    }
+
+    fn extension_shared(f: fn(&GenerateWorkflowArgs) -> Workflow) -> WorkflowFile {
+        WorkflowFile {
+            source: WorkflowSource::WithContext(f),
+            r#type: WorkflowType::ExtensionsShared,
+        }
+    }
+
+    fn generate_file(&self, workflow_args: &GenerateWorkflowArgs) -> Result<()> {
+        let workflow = match &self.source {
+            WorkflowSource::Contextless(f) => f(),
+            WorkflowSource::WithContext(f) => f(workflow_args),
+        };
+        let workflow_folder = self.r#type.folder_path();
+
+        fs::create_dir_all(&workflow_folder).with_context(|| {
+            format!("Failed to create directory: {}", workflow_folder.display())
+        })?;
+
+        let workflow_name = workflow
+            .name
+            .as_ref()
+            .expect("Workflow must have a name at this point");
+        let filename = format!(
+            "{workflow_name}.yml",
+            workflow_name = workflow_name.rsplit("::").next().unwrap_or(workflow_name)
+        );
+
+        let workflow_path = workflow_folder.join(filename);
+
+        let content = workflow
+            .to_string()
+            .map_err(|e| anyhow::anyhow!("{:?}: {:?}", workflow_path, e))?;
+
+        let disclaimer = self.r#type.disclaimer(workflow_name);
+
+        let content = [disclaimer, content].join("\n");
+        fs::write(&workflow_path, content).map_err(Into::into)
+    }
+}
+
+#[derive(PartialEq, Eq, strum::EnumIter)]
+pub enum WorkflowType {
+    /// Workflows living in the Zaply repository
+    Zaply,
+    /// Workflows living in the `zaply-extensions/workflows` repository that are
+    /// required workflows for PRs to the extension organization
+    ExtensionCi,
+    /// Workflows living in each of the extensions to perform checks and version
+    /// bumps until a better, more centralized system for that is in place.
+    ExtensionsShared,
+}
+
+impl WorkflowType {
+    const PREAMBLE: &str = "# Generated from xtask::workflows::";
+
+    fn disclaimer(&self, workflow_name: &str) -> String {
+        format!(
+            concat!(
+                "{preamble}{workflow_name}{external_disclaimer}\n",
+                "# Rebuild with `cargo xtask workflows`.",
+            ),
+            preamble = Self::PREAMBLE,
+            workflow_name = workflow_name,
+            external_disclaimer = (*self != WorkflowType::Zaply)
+                .then_some(" within the Zaply repository.")
+                .unwrap_or_default(),
+        )
+    }
+
+    pub fn folder_path(&self) -> PathBuf {
+        match self {
+            WorkflowType::Zaply => PathBuf::from(".github/workflows"),
+            WorkflowType::ExtensionCi => PathBuf::from("extensions/workflows"),
+            WorkflowType::ExtensionsShared => PathBuf::from("extensions/workflows/shared"),
+        }
+    }
+
+    fn remove_generated_workflows() -> Result<()> {
+        for workflow_type in Self::iter() {
+            for path in fs::read_dir(workflow_type.folder_path())? {
+                let entry = path?;
+                if !entry.file_type().is_ok_and(|file_type| file_type.is_file()) {
+                    continue;
+                }
+
+                let path = entry.path();
+                if fs::read_to_string(&path)
+                    .is_ok_and(|content| content.starts_with(Self::PREAMBLE))
+                {
+                    fs::remove_file(path)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub fn run_workflows(args: GenerateWorkflowArgs) -> Result<()> {
+    if !Path::new("crates/zaply/").is_dir() {
+        anyhow::bail!("xtask workflows must be ran from the project root");
+    }
+
+    // Remove all previously generated workflows to ensure these do not become stale.
+    WorkflowType::remove_generated_workflows()?;
+
+    let workflows = [
+        WorkflowFile::zaply(after_release::after_release),
+        WorkflowFile::zaply(autofix_pr::autofix_pr),
+        WorkflowFile::zaply(bump_patch_version::bump_patch_version),
+        WorkflowFile::zaply(bump_zaply_version::bump_zaply_version),
+        WorkflowFile::zaply(cherry_pick::cherry_pick),
+        WorkflowFile::zaply(compliance_check::compliance_check),
+        WorkflowFile::zaply(danger::danger),
+        WorkflowFile::zaply(deploy_collab::deploy_collab),
+        WorkflowFile::zaply(deploy_docs::deploy_docs),
+        WorkflowFile::zaply(deploy_docs::deploy_nightly_docs),
+        WorkflowFile::zaply(extension_bump::extension_bump),
+        WorkflowFile::zaply(extension_auto_bump::extension_auto_bump),
+        WorkflowFile::zaply(extension_tests::extension_tests),
+        WorkflowFile::zaply(extension_workflow_rollout::extension_workflow_rollout),
+        WorkflowFile::zaply(nix_build::nix_build),
+        WorkflowFile::zaply(publish_extension_cli::publish_extension_cli),
+        WorkflowFile::zaply(release::release),
+        WorkflowFile::zaply(release_nightly::release_nightly),
+        WorkflowFile::zaply(run_bundling::run_bundling),
+        WorkflowFile::zaply(run_tests::run_tests),
+        /* workflows used for CI/CD in extension repositories */
+        WorkflowFile::extension(extensions::run_tests::run_tests),
+        WorkflowFile::extension_shared(extensions::bump_version::bump_version),
+    ];
+
+    for workflow_file in workflows {
+        workflow_file.generate_file(&args)?;
+    }
+
+    workflow_checks::validate(Default::default())
+}

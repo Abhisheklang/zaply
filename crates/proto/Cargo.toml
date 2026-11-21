@@ -1,0 +1,28 @@
+[package]
+description = "Shared protocol for communication between the Zaply app and the collaboration server"
+edition.workspace = true
+name = "proto"
+version = "0.1.0"
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[features]
+test-support = []
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/proto.rs"
+doctest = false
+
+[dependencies]
+anyhow.workspace = true
+prost.workspace = true
+serde = { workspace = true, features = ["derive"] }
+
+[build-dependencies]
+prost-build.workspace = true
+protox.workspace = true
+
+[dev-dependencies]

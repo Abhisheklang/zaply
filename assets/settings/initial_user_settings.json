@@ -1,0 +1,18 @@
+// Zaply settings
+//
+// For information on how to configure Zaply, see the Zaply
+// documentation in the project repository:
+// https://github.com/Abhisheklang/zaply
+//
+// To see all of Zaply's default settings without changing your
+// custom settings, run `Open Default Settings` from the
+// command palette (cmd-shift-p / ctrl-shift-p)
+{
+  "ui_font_size": 16,
+  "buffer_font_size": 15,
+  "theme": {
+    "mode": "system",
+    "light": "One Light",
+    "dark": "One Dark",
+  },
+}

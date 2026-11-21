@@ -1,0 +1,13 @@
+#:schema ../../schema.json
+
+description = "Measures the size of the Zaply binary shipped in the Linux bundle"
+
+[step.exec.bundle-linux]
+cmd = "./script/bundle-linux --skip-sentry"
+
+[step.exec.extract-bundled-binary]
+cmd = "editor_path=$(tar -tzf target/release/zaply-linux-$(uname -m).tar.gz | grep '/libexec/zaply-editor$') && tar -xOzf target/release/zaply-linux-$(uname -m).tar.gz \"$editor_path\" > target/release/zaply-bundled"
+
+[step.filesize.measure-bundled]
+glob = "target/release/zaply-bundled"
+summary.bundled-binary-size = { outcome = "target/release/zaply-bundled" }
