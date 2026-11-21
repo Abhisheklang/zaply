@@ -7,9 +7,11 @@ local folder of extension source code. This script does the fetching:
 
   1. It reads a pack manifest from extension-packs/<pack>.toml.
   2. It clones the public extension registry (blobless, no checkout)
-     into a cache folder and checks out just the extensions the pack
-     names, verifying each one exists in the registry first.
-  3. It prints the folder of each downloaded extension.
+     into a cache folder, verifies each named extension exists in the
+     registry, and reads the extension's own repository address from
+     the registry's .gitmodules file.
+  3. It clones each extension's repository into the cache folder and
+     prints the folder that holds its extension.toml.
 
 The final step is manual, because installing a dev extension is a user
 action in the app: open the Extensions panel, choose "Install Dev
@@ -132,30 +134,69 @@ def main():
         )
         return 1
 
+    # The registry lists every extension as a submodule pointing at the
+    # extension's own repository. Read those addresses, then clone each
+    # repository directly: a blobless, no-checkout registry clone has an
+    # empty index, so git submodule commands cannot address its entries.
+    gitmodules = run(
+        ["git", "-C", registry_dir, "show", "origin/main:.gitmodules"],
+        capture_output=True,
+        text=True,
+    )
+    repository_urls = {}
+    if gitmodules.returncode == 0:
+        current_path = None
+        for line in gitmodules.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("path ="):
+                current_path = line.removeprefix("path =").strip()
+            elif line.startswith("url =") and current_path:
+                repository_urls[current_path] = line.removeprefix("url =").strip()
+                current_path = None
+
+    sources_dir = os.path.join(arguments.cache_dir, "extension-sources")
+    os.makedirs(sources_dir, exist_ok=True)
+
+    def find_manifest(folder):
+        # Most extensions keep extension.toml at the repository root,
+        # but some nest it (for example editors/zed/extension.toml in a
+        # multi-editor repository). Search a few levels down, shallowest
+        # first, preferring paths that mention zed on ties.
+        base_depth = folder.rstrip("/").count("/")
+        candidates = []
+        for root, dirs, files in os.walk(folder):
+            depth = root.count("/") - base_depth
+            if depth > 3:
+                dirs.clear()
+                continue
+            dirs[:] = [d for d in dirs if d != ".git"]
+            if "extension.toml" in files:
+                candidates.append((depth, "zed" not in root, root))
+        if not candidates:
+            return None
+        candidates.sort()
+        return candidates[0][2]
+
     failed = []
     installed_paths = []
     for extension_id in extension_ids:
-        result = run(
-            [
-                "git",
-                "-C",
-                registry_dir,
-                "submodule",
-                "update",
-                "--init",
-                "--depth",
-                "1",
-                "--",
-                f"extensions/{extension_id}",
-            ]
-        )
-        extension_path = os.path.join(registry_dir, "extensions", extension_id)
-        if result.returncode != 0 or not os.path.isfile(
-            os.path.join(extension_path, "extension.toml")
-        ):
+        url = repository_urls.get(f"extensions/{extension_id}")
+        target = os.path.join(sources_dir, extension_id)
+        if url is None:
+            failed.append(extension_id)
+            continue
+        if os.path.isdir(os.path.join(target, ".git")):
+            run(["git", "-C", target, "pull", "--ff-only", "--quiet"])
+        else:
+            result = run(["git", "clone", "--depth", "1", "--quiet", url, target])
+            if result.returncode != 0:
+                failed.append(extension_id)
+                continue
+        manifest_dir = find_manifest(target)
+        if manifest_dir is None:
             failed.append(extension_id)
         else:
-            installed_paths.append(extension_path)
+            installed_paths.append(manifest_dir)
 
     print()
     print(f"Pack: {pack.get('name', arguments.pack)}")
