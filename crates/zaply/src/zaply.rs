@@ -1930,8 +1930,9 @@ fn export_settings(workspace: &mut Workspace, window: &mut Window, cx: &mut Cont
         cx,
     );
     cx.spawn_in(window, async move |workspace, cx| {
-        let Some(prompt_result) = path_receiver.await else {
-            return;
+        let prompt_result = match path_receiver.await {
+            Ok(Some(prompt_result)) => prompt_result,
+            _ => return,
         };
         let Some(folder) = prompt_result.paths.into_iter().next() else {
             return;
@@ -1990,8 +1991,9 @@ fn import_settings(workspace: &mut Workspace, window: &mut Window, cx: &mut Cont
         cx,
     );
     cx.spawn_in(window, async move |workspace, cx| {
-        let Some(prompt_result) = path_receiver.await else {
-            return;
+        let prompt_result = match path_receiver.await {
+            Ok(Some(prompt_result)) => prompt_result,
+            _ => return,
         };
         let Some(path) = prompt_result.paths.into_iter().next() else {
             return;
@@ -2090,8 +2092,9 @@ fn create_project_from_template(
             return;
         };
 
-        let Some(prompt_result) = path_receiver.await else {
-            return;
+        let prompt_result = match path_receiver.await {
+            Ok(Some(prompt_result)) => prompt_result,
+            _ => return,
         };
         let Some(folder) = prompt_result.paths.into_iter().next() else {
             return;
@@ -2099,11 +2102,12 @@ fn create_project_from_template(
 
         let outcome: anyhow::Result<usize> = async {
             let prefix = format!("templates/{template_name}");
+            let prefix_with_slash = format!("{prefix}/");
             let files = asset_source.list(&prefix)?;
             let mut written = 0;
             for file in &files {
                 let file_path: &str = file;
-                let Some(relative) = file_path.strip_prefix(&format!("{prefix}/")) else {
+                let Some(relative) = file_path.strip_prefix(prefix_with_slash.as_str()) else {
                     continue;
                 };
                 if relative.is_empty() {

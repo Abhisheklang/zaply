@@ -760,8 +760,9 @@ pub async fn handle_import_vscode_keybindings(
         return;
     };
 
-    let Some(prompt_result) = path_receiver.await else {
-        return;
+    let prompt_result = match path_receiver.await {
+        Ok(Some(prompt_result)) => prompt_result,
+        _ => return,
     };
     let Some(path) = prompt_result.paths.into_iter().next() else {
         return;
