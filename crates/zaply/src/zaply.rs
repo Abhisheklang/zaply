@@ -129,6 +129,9 @@ actions!(
         Minimize,
         /// Opens the default settings file.
         OpenDefaultSettings,
+        /// Opens the agent audit log, which records the tool calls the agent
+        /// ran and the permission decision made for each of them.
+        OpenAgentAuditLog,
         /// Opens project-specific settings file.
         OpenProjectSettingsFile,
         /// Opens the tasks panel.
@@ -218,6 +221,12 @@ pub fn init(cx: &mut App) {
         }
     })
     .detach();
+
+    cx.on_action(|_: &OpenAgentAuditLog, cx| {
+        with_active_or_new_workspace(cx, |workspace, window, cx| {
+            open_agent_audit_log(workspace, window, cx);
+        });
+    });
 
     // When Zaply logs to stdout rather than the log file, avoid registering
     // handlers for both `OpenLog` and `RevealLogInFileManager`, as the log file
@@ -1910,6 +1919,68 @@ fn open_log_file(workspace: &mut Workspace, window: &mut Window, cx: &mut Contex
                     editor.change_selections(Default::default(), window, cx, |s| {
                         s.select_ranges(Some(last_multi_buffer_offset..last_multi_buffer_offset));
                     });
+                    editor
+                })
+                .ok()?;
+
+            workspace
+                .update_in(cx, |workspace, window, cx| {
+                    workspace.add_item_to_active_pane(Box::new(editor), None, true, window, cx);
+                })
+                .ok()
+        })
+        .await;
+    })
+    .detach();
+}
+
+fn open_agent_audit_log(
+    workspace: &mut Workspace,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) {
+    let app_state = workspace.app_state();
+    let languages = app_state.languages.clone();
+    let fs = app_state.fs.clone();
+    cx.spawn_in(window, async move |workspace, cx| {
+        let (contents, language) = {
+            let (contents, language) = futures::join!(
+                fs.load(paths::agent_audit_log_file()),
+                languages.language_for_name("JSON")
+            );
+            (
+                contents.unwrap_or_else(|_| {
+                    "No agent activity has been recorded yet.\n\
+                    Tool calls run by the agent, and the permission decision made for each \
+                    of them, will appear here.\n"
+                        .to_string()
+                }),
+                language.ok(),
+            )
+        };
+        maybe!(async move {
+            let project = workspace
+                .read_with(cx, |workspace, _| workspace.project().clone())
+                .ok()?;
+            let buffer = project
+                .update(cx, |project, cx| {
+                    project.create_buffer(language, false, cx)
+                })
+                .await
+                .ok()?;
+            buffer.update(cx, |buffer, cx| {
+                buffer.set_capability(Capability::ReadOnly, cx);
+                buffer.set_text(contents, cx);
+            });
+
+            let buffer = cx.new(|cx| {
+                MultiBuffer::singleton(buffer, cx).with_title("Agent Audit Log".into())
+            });
+
+            let editor = cx
+                .new_window_entity(|window, cx| {
+                    let mut editor = Editor::for_multibuffer(buffer, Some(project), window, cx);
+                    editor.set_read_only(true);
                     editor
                 })
                 .ok()?;

@@ -3920,6 +3920,8 @@ impl Thread {
             ));
         }
 
+        crate::audit_log::record("tool_call", &tool_name, "", "started");
+
         let fs = self.project.read(cx).fs().clone();
         let tool_call_id = scoped_tool_call_id(owning_message_ix, &tool_use_id);
         let tool_event_stream = ToolCallEventStream::new(
@@ -3977,6 +3979,13 @@ impl Thread {
                 }
                 Err(output) => (true, output),
             };
+
+            crate::audit_log::record(
+                "tool_result",
+                &tool_name,
+                "",
+                if is_error { "error" } else { "ok" },
+            );
 
             (
                 owning_message_ix,
@@ -6864,11 +6873,30 @@ impl ToolCallEventStream {
         check_settings: Option<Box<dyn Fn(&App) -> ToolPermissionDecision>>,
         cx: &mut App,
     ) -> Task<Result<()>> {
+        let (audit_tool_name, audit_detail) = match &context {
+            Some(context) => (context.tool_name.clone(), context.input_values.join(" ")),
+            None => (title.clone(), String::new()),
+        };
+
         // Short-circuit when current settings yield a definitive answer.
         if let Some(check) = check_settings.as_ref() {
             match check(cx) {
-                ToolPermissionDecision::Allow => return Task::ready(Ok(())),
+                ToolPermissionDecision::Allow => {
+                    crate::audit_log::record(
+                        "permission",
+                        &audit_tool_name,
+                        &audit_detail,
+                        "allowed_by_settings",
+                    );
+                    return Task::ready(Ok(()));
+                }
                 ToolPermissionDecision::Deny(reason) => {
+                    crate::audit_log::record(
+                        "permission",
+                        &audit_tool_name,
+                        &audit_detail,
+                        "denied_by_settings",
+                    );
                     return Task::ready(Err(anyhow!(reason)));
                 }
                 ToolPermissionDecision::Confirm => {}
@@ -6915,7 +6943,18 @@ impl ToolCallEventStream {
                     .map_err(|_| anyhow!("authorization channel closed"))?;
                 ensure_tool_call_authorization_not_interrupted(&outcome)?;
 
-                return Self::persist_permission_outcome(&outcome, fs, cx);
+                let result = Self::persist_permission_outcome(&outcome, fs, cx);
+                crate::audit_log::record(
+                    "permission",
+                    &audit_tool_name,
+                    &audit_detail,
+                    if result.is_ok() {
+                        "allowed_by_user"
+                    } else {
+                        "denied_by_user"
+                    },
+                );
+                return result;
             };
             let Some((auto_allow_outcome, auto_deny_outcome)) = auto_resolution_outcomes else {
                 return Err(anyhow!("missing auto-resolution outcomes"));
@@ -6943,7 +6982,18 @@ impl ToolCallEventStream {
                     outcome = (&mut response_rx).fuse() => {
                         let outcome = outcome.map_err(|_| anyhow!("authorization channel closed"))?;
                         ensure_tool_call_authorization_not_interrupted(&outcome)?;
-                        return Self::persist_permission_outcome(&outcome, fs.clone(), cx);
+                        let result = Self::persist_permission_outcome(&outcome, fs.clone(), cx);
+                        crate::audit_log::record(
+                            "permission",
+                            &audit_tool_name,
+                            &audit_detail,
+                            if result.is_ok() {
+                                "allowed_by_user"
+                            } else {
+                                "denied_by_user"
+                            },
+                        );
+                        return result;
                     }
                     _ = settings_changed.fuse() => {
                         // On auto-resolve, we dismiss the prompt UI by
@@ -6958,6 +7008,12 @@ impl ToolCallEventStream {
                                     &tool_call_id,
                                     auto_allow_outcome.clone(),
                                 );
+                                crate::audit_log::record(
+                                    "permission",
+                                    &audit_tool_name,
+                                    &audit_detail,
+                                    "allowed_by_settings_change",
+                                );
                                 return Ok(());
                             }
                             ToolPermissionDecision::Deny(reason) => {
@@ -6965,6 +7021,12 @@ impl ToolCallEventStream {
                                 stream.resolve_tool_call_authorization(
                                     &tool_call_id,
                                     auto_deny_outcome.clone(),
+                                );
+                                crate::audit_log::record(
+                                    "permission",
+                                    &audit_tool_name,
+                                    &audit_detail,
+                                    "denied_by_settings_change",
                                 );
                                 return Err(anyhow!(reason));
                             }

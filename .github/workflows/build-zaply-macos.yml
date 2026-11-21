@@ -1,0 +1,104 @@
+# Builds Zaply for macOS and packages it as a DMG using script/bundle-mac.
+# Runs on standard GitHub-hosted runners only.
+#
+# The deployment target is macOS 12.0 (set by script/bundle-mac), so the
+# packages run on macOS 12 and newer. The bundles are unsigned: Zaply has
+# no Apple Developer account, so Gatekeeper will ask the user to confirm
+# the first launch. Signing and notarization can be enabled later by
+# providing the usual certificates and keys as repository secrets.
+#
+# - On a version tag (v*): the DMGs are attached to the GitHub release.
+# - Otherwise: the DMGs are kept as a short-retention workflow artifact.
+name: Build Zaply for macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  build-macos:
+    name: Build and package Zaply for macOS (${{ matrix.target }})
+    # script/bundle-mac requires the macOS 26 SDK, which is what the
+    # macos-26 runner image provides.
+    runs-on: macos-26
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+    steps:
+      - name: Check out Zaply
+        uses: actions/checkout@v4
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Build the app bundle and DMG
+        run: script/bundle-mac ${{ matrix.target }}
+
+      - name: Verify the deployment target and the command-line tool
+        run: |
+          set -euo pipefail
+          APP_PATH="target/${{ matrix.target }}/release/dmg/Zaply.app"
+          test -d "$APP_PATH"
+          echo "LSMinimumSystemVersion in Info.plist:"
+          /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' \
+            "$APP_PATH/Contents/Info.plist" || echo "(not set in Info.plist)"
+          echo "Minimum macOS version recorded in the editor binary:"
+          vtool -show-build "$APP_PATH/Contents/MacOS/zaply" | grep -E 'platform|minos|sdk'
+          MINOS="$(vtool -show-build "$APP_PATH/Contents/MacOS/zaply" | awk '/minos/ {print $2; exit}')"
+          if [ "$MINOS" != "12.0" ]; then
+            echo "Expected a deployment target of 12.0 but the binary records $MINOS" >&2
+            exit 1
+          fi
+          echo "Command-line tool version:"
+          "$APP_PATH/Contents/MacOS/cli" --version
+
+      - name: Probe whether the app launches and stays alive
+        continue-on-error: true
+        run: |
+          APP_PATH="$PWD/target/${{ matrix.target }}/release/dmg/Zaply.app"
+          open "$APP_PATH"
+          sleep 15
+          if pgrep -f "Zaply.app/Contents/MacOS" > /dev/null; then
+            echo "Zaply launched and was still running after 15 seconds."
+          else
+            echo "Zaply did not appear to be running after 15 seconds."
+            exit 1
+          fi
+          pkill -f "Zaply.app/Contents/MacOS" || true
+
+      - name: Upload the DMG as a workflow artifact (manual and branch runs)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zaply-macos-${{ matrix.target }}-dmg
+          path: target/${{ matrix.target }}/release/Zaply-*.dmg
+          retention-days: 3
+
+      - name: Publish the DMG on the GitHub release (version tags)
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            target/${{ matrix.target }}/release/Zaply-*.dmg --clobber \
+          || gh release create "$GITHUB_REF_NAME" \
+            --title "Zaply $GITHUB_REF_NAME" \
+            --notes "Zaply $GITHUB_REF_NAME. Download the .deb, AppImage or tar.gz for Linux, the DMG for macOS (12 or newer, unsigned), or the installer for Windows (10 or newer, unsigned). See the README for install instructions." \
+            target/${{ matrix.target }}/release/Zaply-*.dmg

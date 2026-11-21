@@ -1,0 +1,103 @@
+# Builds Zaply for Windows and packages it as an Inno Setup installer
+# using script/bundle-windows.ps1. Runs on standard GitHub-hosted runners
+# only. The packages require Windows 10 or newer and are unsigned: Zaply
+# has no code-signing certificate, so SmartScreen will ask the user to
+# confirm the first run.
+#
+# - On a version tag (v*): the installer is attached to the GitHub release.
+# - Otherwise: the installer is kept as a short-retention workflow artifact.
+name: Build Zaply for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  build-windows:
+    name: Build and package Zaply for Windows (x86_64)
+    # The bundle script expects Visual Studio 2022 and Inno Setup 6 in
+    # their default locations, which is what the windows-2022 image has.
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - name: Check out Zaply
+        uses: actions/checkout@v4
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Build the app and the installer
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '3.0.0' }}
+        run: |
+          $env:RELEASE_VERSION = $env:RELEASE_VERSION -replace '^v', ''
+          & .\script\bundle-windows.ps1 -Architecture x86_64
+          if (-not (Test-Path "target/Zaply-x86_64.exe")) {
+            throw "Installer target/Zaply-x86_64.exe was not produced"
+          }
+
+      - name: Verify the command-line tool
+        shell: pwsh
+        run: |
+          & .\target\x86_64-pc-windows-msvc\release\cli.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "cli.exe --version failed" }
+
+      - name: Install silently and probe whether the app launches
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $setup = Start-Process -FilePath ".\target\Zaply-x86_64.exe" `
+            -ArgumentList "/VERYSILENT", "/NORESTART", "/SUPPRESSMSGBOXES" `
+            -NoNewWindow -Wait -PassThru
+          Write-Host "Installer exit code: $($setup.ExitCode)"
+          $installedCli = "C:\Program Files\Zaply\bin\zaply.exe"
+          if (Test-Path $installedCli) {
+            & $installedCli --version
+          } else {
+            Write-Host "Installed command-line tool not found at $installedCli"
+          }
+          $editor = Start-Process -FilePath "C:\Program Files\Zaply\Zaply.exe" -PassThru
+          Start-Sleep -Seconds 15
+          if (-not $editor.HasExited) {
+            Write-Host "Zaply launched and was still running after 15 seconds."
+            Stop-Process -Id $editor.Id -Force
+          } else {
+            Write-Host "Zaply exited early with code $($editor.ExitCode)."
+            exit 1
+          }
+
+      - name: Upload the installer as a workflow artifact (manual and branch runs)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zaply-windows-x86_64-installer
+          path: target/Zaply-x86_64.exe
+          retention-days: 3
+
+      - name: Publish the installer on the GitHub release (version tags)
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$env:GITHUB_REF_NAME" target/Zaply-x86_64.exe --clobber
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "$env:GITHUB_REF_NAME" `
+              --title "Zaply $env:GITHUB_REF_NAME" `
+              --notes "Zaply $env:GITHUB_REF_NAME. Download the .deb, AppImage or tar.gz for Linux, the DMG for macOS (12 or newer, unsigned), or the installer for Windows (10 or newer, unsigned). See the README for install instructions." `
+              target/Zaply-x86_64.exe
+          }

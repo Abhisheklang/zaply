@@ -1266,24 +1266,54 @@
       // The per-tool "default" also applies to MCP tools.
       // Each tool can have its own default and regex patterns.
       "tools": {
-        // "terminal": {
-        //   "default": "confirm",
-        //   "always_confirm": [
-        //     // Destructive git operations
-        //     { "pattern": "git\\s+(reset|clean)\\s+--hard" },
-        //     { "pattern": "git\\s+push\\s+(-f|--force)" },
-        //   ],
-        // },
-        // "edit_file": {
-        //   "default": "confirm",
-        //   "always_deny": [
-        //     // Secrets and credentials
-        //     { "pattern": "\\.env($|\\.)" },
-        //     { "pattern": "secrets?/" },
-        //     { "pattern": "\\.pem$" },
-        //     { "pattern": "\\.key$" },
-        //   ],
-        // },
+        // Zaply ships with a safety layer enabled: destructive terminal
+        // commands always ask first, deleting files always asks first, and
+        // the agent can never edit secrets or credential files.
+        "terminal": {
+          "default": "confirm",
+          "always_confirm": [
+            // Destructive git operations
+            { "pattern": "git\\s+(reset|clean)\\s+.*--hard" },
+            { "pattern": "git\\s+push\\s+.*(-f|--force)" },
+            // Recursive or forced file deletion
+            { "pattern": "rm\\s+.*(-[a-zA-Z]*r|-[a-zA-Z]*f|--recursive|--force)" },
+            // Disk and filesystem level operations
+            { "pattern": "\\b(mkfs|fdisk|parted|dd)\\b" },
+            { "pattern": ">\\s*/dev/(sd|hd|nvme)" },
+            // Recursive permission or ownership changes
+            { "pattern": "\\b(chmod|chown)\\s+.*(-R|--recursive)" },
+            // Destructive database statements
+            { "pattern": "\\bdrop\\s+(table|database|schema)\\b" },
+            { "pattern": "\\btruncate\\s+table\\b" }
+          ],
+          "always_allow": [
+            // Read-only inspection commands
+            { "pattern": "^(ls|pwd|cat|head|tail|wc|file|stat|which|echo)\\b" },
+            { "pattern": "^git\\s+(status|log|diff|show|branch)\\b" }
+          ]
+        },
+        // Deleting files through the agent always asks first.
+        "delete_path": {
+          "default": "confirm"
+        },
+        "edit_file": {
+          "always_deny": [
+            // Secrets and credentials
+            { "pattern": "\\.env($|\\.)" },
+            { "pattern": "secrets?/" },
+            { "pattern": "\\.pem$" },
+            { "pattern": "\\.key$" }
+          ]
+        },
+        "write_file": {
+          "always_deny": [
+            // Secrets and credentials
+            { "pattern": "\\.env($|\\.)" },
+            { "pattern": "secrets?/" },
+            { "pattern": "\\.pem$" },
+            { "pattern": "\\.key$" }
+          ]
+        }
       },
     },
     // When enabled, agent edits will be displayed in single-file editors for review
@@ -2636,6 +2666,11 @@
       },
       "debuggers": ["Debugpy"],
       "language_servers": ["basedpyright", "ruff", "!ty", "!pyrefly", "!pyright", "!pylsp", "..."],
+      // Tuned for Python and data science work: PEP 8 indentation and line
+      // length, and formatting applied automatically on save.
+      "tab_size": 4,
+      "preferred_line_length": 88,
+      "format_on_save": "on",
     },
     "Ruby": {
       "language_servers": [

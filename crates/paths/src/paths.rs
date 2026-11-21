@@ -248,6 +248,14 @@ pub fn log_file() -> &'static PathBuf {
     LOG_FILE.get_or_init(|| logs_dir().join(format!("{}.log", APP_NAME)))
 }
 
+/// Returns the path to the agent audit log file. The agent appends one JSON
+/// object per line recording the tool calls it runs and the permission
+/// decision made for each of them.
+pub fn agent_audit_log_file() -> &'static PathBuf {
+    static AGENT_AUDIT_LOG_FILE: OnceLock<PathBuf> = OnceLock::new();
+    AGENT_AUDIT_LOG_FILE.get_or_init(|| data_dir().join("agent-audit-log.jsonl"))
+}
+
 /// Returns the path to the `Zaply.log.old` file.
 pub fn old_log_file() -> &'static PathBuf {
     static OLD_LOG_FILE: OnceLock<PathBuf> = OnceLock::new();
