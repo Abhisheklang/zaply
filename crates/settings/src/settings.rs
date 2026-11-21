@@ -51,7 +51,10 @@ pub use settings_store::{
     SettingsJsonSchemaParams, SettingsKey, SettingsLocation, SettingsParseResult, SettingsStore,
 };
 
-pub use vscode_import::{VsCodeSettings, VsCodeSettingsSource};
+pub use vscode_import::{
+    ConvertedKeybinding, VsCodeKeybindingsConversion, VsCodeSettings, VsCodeSettingsSource,
+    convert_vscode_keybindings, merge_converted_keybindings,
+};
 
 pub use keymap_file::ActionSequence;
 
