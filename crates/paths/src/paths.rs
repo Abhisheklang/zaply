@@ -256,6 +256,14 @@ pub fn agent_audit_log_file() -> &'static PathBuf {
     AGENT_AUDIT_LOG_FILE.get_or_init(|| data_dir().join("agent-audit-log.jsonl"))
 }
 
+/// Returns the path to the file holding the local-only API usage counts
+/// (tokens per provider, model, and day). The file never leaves the
+/// device; it exists so the user can see what their own keys have used.
+pub fn api_usage_file() -> &'static PathBuf {
+    static API_USAGE_FILE: OnceLock<PathBuf> = OnceLock::new();
+    API_USAGE_FILE.get_or_init(|| data_dir().join("api-usage.json"))
+}
+
 /// Returns the path to the `Zaply.log.old` file.
 pub fn old_log_file() -> &'static PathBuf {
     static OLD_LOG_FILE: OnceLock<PathBuf> = OnceLock::new();

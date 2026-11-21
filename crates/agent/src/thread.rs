@@ -2438,21 +2438,28 @@ impl Thread {
                 .max(update.cache_read_input_tokens),
         };
         self.current_request_token_usage = current_accounted_usage;
-        self.cumulative_token_usage = self.cumulative_token_usage
-            + TokenUsage {
-                input_tokens: current_accounted_usage
-                    .input_tokens
-                    .saturating_sub(previous_accounted_usage.input_tokens),
-                output_tokens: current_accounted_usage
-                    .output_tokens
-                    .saturating_sub(previous_accounted_usage.output_tokens),
-                cache_creation_input_tokens: current_accounted_usage
-                    .cache_creation_input_tokens
-                    .saturating_sub(previous_accounted_usage.cache_creation_input_tokens),
-                cache_read_input_tokens: current_accounted_usage
-                    .cache_read_input_tokens
-                    .saturating_sub(previous_accounted_usage.cache_read_input_tokens),
-            };
+        let usage_delta = TokenUsage {
+            input_tokens: current_accounted_usage
+                .input_tokens
+                .saturating_sub(previous_accounted_usage.input_tokens),
+            output_tokens: current_accounted_usage
+                .output_tokens
+                .saturating_sub(previous_accounted_usage.output_tokens),
+            cache_creation_input_tokens: current_accounted_usage
+                .cache_creation_input_tokens
+                .saturating_sub(previous_accounted_usage.cache_creation_input_tokens),
+            cache_read_input_tokens: current_accounted_usage
+                .cache_read_input_tokens
+                .saturating_sub(previous_accounted_usage.cache_read_input_tokens),
+        };
+        self.cumulative_token_usage = self.cumulative_token_usage + usage_delta;
+        if let Some(model) = self.model() {
+            crate::usage_stats::record_usage(
+                &model.provider_id().to_string(),
+                &model.id().to_string(),
+                usage_delta,
+            );
+        }
     }
 
     fn update_token_usage(&mut self, update: language_model::TokenUsage, cx: &mut Context<Self>) {

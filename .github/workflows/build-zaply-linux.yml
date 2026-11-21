@@ -56,12 +56,26 @@ jobs:
 
       - name: Build Zaply and assemble the application tree (Ubuntu 20.04 container)
         run: |
+          # The Rust toolchain and sccache live in the runner's home
+          # directory, outside the checkout, so mount them into the
+          # container at the same paths and point the toolchain
+          # environment variables at them. The official toolchain
+          # binaries run on old glibc versions by design, so they work
+          # on Ubuntu 20.04.
+          SCCACHE_BIN_DIR="$(dirname "$(command -v sccache)")"
           docker run --rm \
             -v "$PWD:/work" -w /work \
+            -v "$HOME/.cargo:$HOME/.cargo" \
+            -v "$HOME/.rustup:$HOME/.rustup" \
+            -v "$SCCACHE_BIN_DIR:$SCCACHE_BIN_DIR" \
             -e SCCACHE_GHA_ENABLED="true" \
             -e ACTIONS_CACHE_URL -e ACTIONS_RUNTIME_TOKEN \
             -e CARGO_TERM_COLOR=never -e CARGO_INCREMENTAL="0" \
             -e RUSTC_WRAPPER="sccache" \
+            -e HOME="$HOME" \
+            -e CARGO_HOME="$HOME/.cargo" \
+            -e RUSTUP_HOME="$HOME/.rustup" \
+            -e PATH="$SCCACHE_BIN_DIR:$HOME/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
             zaply-focal-build bash -euo pipefail -c '
               script/linux
               # Prefer the clang 18 toolchain installed by script/linux

@@ -40,8 +40,17 @@ function Get-VSArch {
     }
 }
 
+# Locate Visual Studio with vswhere so any edition works (the GitHub
+# windows-2022 runner ships the Enterprise edition, not Community).
+$VsWherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+if (Test-Path $VsWherePath) {
+    $VsInstallPath = & $VsWherePath -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    $LaunchVsDevShell = Join-Path $VsInstallPath "Common7\Tools\Launch-VsDevShell.ps1"
+} else {
+    $LaunchVsDevShell = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Launch-VsDevShell.ps1"
+}
 Push-Location
-& "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Launch-VsDevShell.ps1" -Arch (Get-VSArch -Arch $Architecture) -HostArch (Get-VSArch -Arch $OSArchitecture)
+& $LaunchVsDevShell -Arch (Get-VSArch -Arch $Architecture) -HostArch (Get-VSArch -Arch $OSArchitecture)
 Pop-Location
 
 $target = "$Architecture-pc-windows-msvc"

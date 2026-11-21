@@ -1,4 +1,5 @@
 mod audit_log;
+mod usage_stats;
 mod db;
 mod legacy_thread;
 mod native_agent_server;

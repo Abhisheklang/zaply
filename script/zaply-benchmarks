@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""Reproducible Zaply benchmarks for a headless Linux machine.
+
+Measures, against a built Zaply application tree (the zaply.app directory
+produced by the Linux build):
+
+  * startup: process launch until the first window exists, and until the
+    rendered frame settles (two consecutive frames that look the same and
+    are not black).
+  * large file: opening a 20 MB text file until the frame settles.
+  * project search: opening project search, typing a unique query, and
+    waiting until the frame settles.
+
+The measurements use a virtual X display (Xvfb) and a software Vulkan
+driver, so absolute numbers describe this machine and rendering path;
+they are meant for before/after comparisons on the same machine, not
+for comparisons with other editors or hardware.
+
+Usage:
+    script/zaply-benchmarks --app-dir path/to/zaply.app --output results.md
+
+Requires: Xvfb, ffmpeg, xdotool, dbus-daemon.
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+DISPLAY = ":99"
+ICD_PATH = "/opt/meta-chromium/vk_swiftshader_icd.json"
+UNIQUE_TOKEN = "zaplybenchmarktoken42"
+
+
+def run(command, **kwargs):
+    return subprocess.run(command, capture_output=True, text=True, **kwargs)
+
+
+def frame_stats(display):
+    """Return (mean_luma, byte_sum) of a tiny grayscale capture, or None."""
+    ffmpeg = subprocess.run(
+        [
+            "ffmpeg",
+            "-loglevel",
+            "error",
+            "-f",
+            "x11grab",
+            "-video_size",
+            "960x540",
+            "-i",
+            f"{display}.0+0,0",
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=96:54,format=gray",
+            "-f",
+            "rawvideo",
+            "-",
+        ],
+        capture_output=True,
+        env={**os.environ, "DISPLAY": display},
+    )
+    data = ffmpeg.stdout
+    if len(data) < 96 * 54:
+        return None
+    return (sum(data) / len(data), sum(data))
+
+
+def wait_for_settled_frame(display, timeout_seconds, poll_interval=0.25):
+    """Wait until the frame is non-black and stops changing."""
+    deadline = time.monotonic() + timeout_seconds
+    previous = None
+    stable_since = None
+    while time.monotonic() < deadline:
+        stats = frame_stats(display)
+        if stats is not None:
+            mean_luma, byte_sum = stats
+            if mean_luma > 4.0:
+                if previous is not None and abs(byte_sum - previous) < 400:
+                    if stable_since is None:
+                        stable_since = time.monotonic()
+                    elif time.monotonic() - stable_since >= 1.0:
+                        return True
+                else:
+                    stable_since = None
+                previous = byte_sum
+        time.sleep(poll_interval)
+    return False
+
+
+def wait_for_window(display, timeout_seconds):
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        result = run(
+            ["xdotool", "search", "--name", "."],
+            env={**os.environ, "DISPLAY": display},
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return True
+        time.sleep(0.1)
+    return False
+
+
+class ZaplyProcess:
+    def __init__(self, app_dir, home_dir, arguments):
+        environment = {
+            **os.environ,
+            "HOME": home_dir,
+            "DISPLAY": DISPLAY,
+            "VK_ICD_FILENAMES": ICD_PATH,
+            "ZAPLY_ALLOW_EMULATED_GPU": "1",
+            "ZAPLY_ALLOW_ROOT": "1",
+        }
+        self.started_at = time.monotonic()
+        self.process = subprocess.Popen(
+            [os.path.join(app_dir, "bin", "zaply"), *arguments],
+            env=environment,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def stop(self):
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=10)
+        # The command-line tool hands off to a separate editor process;
+        # make sure it is gone before the next measurement.
+        run(["pkill", "-f", "zaply.app/libexec/zaply-editor"])
+        time.sleep(1)
+
+
+def send_key(key):
+    run(["xdotool", "key", key], env={**os.environ, "DISPLAY": DISPLAY})
+
+
+def send_text(text):
+    run(
+        ["xdotool", "type", "--delay", "20", text],
+        env={**os.environ, "DISPLAY": DISPLAY},
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--app-dir", required=True, help="Path to zaply.app")
+    parser.add_argument("--output", help="Write a Markdown report to this path")
+    parser.add_argument(
+        "--keep-workdir", action="store_true", help="Do not delete the scratch directory"
+    )
+    arguments = parser.parse_args()
+
+    app_dir = os.path.abspath(arguments.app_dir)
+    if not os.path.isfile(os.path.join(app_dir, "bin", "zaply")):
+        print(f"error: {app_dir} does not look like a zaply.app tree", file=sys.stderr)
+        return 1
+    for tool in ("Xvfb", "ffmpeg", "xdotool", "dbus-daemon"):
+        if shutil.which(tool) is None:
+            print(f"error: required tool not found: {tool}", file=sys.stderr)
+            return 1
+
+    work_dir = tempfile.mkdtemp(prefix="zaply-benchmarks-")
+    home_dir = os.path.join(work_dir, "home")
+    project_dir = os.path.join(work_dir, "project")
+    os.makedirs(home_dir)
+    os.makedirs(project_dir)
+
+    # A bench project: many small files, one file with a unique token, and
+    # one 20 MB file.
+    for index in range(300):
+        with open(os.path.join(project_dir, f"module_{index}.py"), "w") as handle:
+            handle.write(f"# module {index}\nVALUE = {index}\n" * 20)
+    with open(os.path.join(project_dir, "needle.py"), "w") as handle:
+        handle.write(f"MARKER = '{UNIQUE_TOKEN}'\n")
+    large_file = os.path.join(project_dir, "large.log")
+    with open(large_file, "w") as handle:
+        line = "2026-01-01T00:00:00Z INFO worker processed batch without incident\n"
+        for _ in range(20 * 1024 * 1024 // len(line)):
+            handle.write(line)
+
+    xvfb = None
+    dbus = None
+    results = {}
+    try:
+        if not os.path.exists("/tmp/.X11-unix/X99"):
+            xvfb = subprocess.Popen(
+                ["Xvfb", DISPLAY, "-screen", "0", "1920x1080x24"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(2)
+        dbus = subprocess.Popen(
+            ["dbus-daemon", "--session", "--fork", "--print-address=1"],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        address, _ = dbus.communicate(timeout=10)
+        os.environ["DBUS_SESSION_BUS_ADDRESS"] = address.strip()
+
+        # Warm-up run: completes first-run onboarding and project trust so
+        # the measured runs reflect a returning user.
+        warm_up = ZaplyProcess(app_dir, home_dir, [project_dir])
+        wait_for_settled_frame(DISPLAY, 120)
+        send_key("Return")
+        time.sleep(2)
+        warm_up.stop()
+
+        # Measured startup: open the project, time to first window and to
+        # a settled frame. Best of three runs is reported alongside all.
+        startup_window_runs = []
+        startup_settled_runs = []
+        for _ in range(3):
+            process = ZaplyProcess(app_dir, home_dir, [project_dir])
+            if wait_for_window(DISPLAY, 60):
+                startup_window_runs.append(time.monotonic() - process.started_at)
+            if wait_for_settled_frame(DISPLAY, 120):
+                startup_settled_runs.append(time.monotonic() - process.started_at)
+            process.stop()
+        if startup_window_runs:
+            results["startup_to_window_seconds"] = min(startup_window_runs)
+        if startup_settled_runs:
+            results["startup_to_settled_frame_seconds"] = min(startup_settled_runs)
+
+        # Large file open.
+        process = ZaplyProcess(app_dir, home_dir, [large_file])
+        if wait_for_settled_frame(DISPLAY, 120):
+            results["large_file_open_seconds"] = time.monotonic() - process.started_at
+
+        # Project search for the unique token.
+        send_key("ctrl+shift+f")
+        time.sleep(1)
+        send_text(UNIQUE_TOKEN)
+        search_started_at = time.monotonic()
+        if wait_for_settled_frame(DISPLAY, 60):
+            results["project_search_seconds"] = time.monotonic() - search_started_at
+        process.stop()
+    finally:
+        if xvfb is not None:
+            xvfb.terminate()
+        if not arguments.keep_workdir:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+    lines = ["# Zaply benchmark results", ""]
+    lines.append(f"Application tree: `{app_dir}`")
+    lines.append("")
+    labels = {
+        "startup_to_window_seconds": "Startup, process launch to first window (s)",
+        "startup_to_settled_frame_seconds": "Startup, process launch to settled frame (s)",
+        "large_file_open_seconds": "Open a 20 MB file to settled frame (s)",
+        "project_search_seconds": "Project search for a unique token to settled frame (s)",
+    }
+    for key, label in labels.items():
+        value = results.get(key)
+        rendered = f"{value:.2f}" if value is not None else "not measured"
+        lines.append(f"- {label}: **{rendered}**")
+    report = "\n".join(lines) + "\n"
+    print(report)
+    if arguments.output:
+        with open(arguments.output, "w") as handle:
+            handle.write(report)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

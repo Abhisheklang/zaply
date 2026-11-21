@@ -1657,3 +1657,233 @@ mod tests {
         assert_eq!(imported_soft_wrap_indent("{}"), None);
     }
 }
+
+/// A single keybinding converted from a VS Code `keybindings.json` entry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConvertedKeybinding {
+    /// Zaply keystroke syntax, for example `ctrl-shift-p` or `ctrl-k ctrl-c`.
+    pub keystrokes: String,
+    /// The Zaply action the binding triggers, for example `workspace::Save`.
+    pub action: String,
+    /// The keymap context the binding applies in, if any.
+    pub context: Option<String>,
+}
+
+/// The result of converting a VS Code `keybindings.json` file.
+#[derive(Clone, Debug, Default)]
+pub struct VsCodeKeybindingsConversion {
+    pub bindings: Vec<ConvertedKeybinding>,
+    /// Entries that could not be converted (unknown command, a removal
+    /// entry, or a `when` clause with no Zaply equivalent).
+    pub skipped: usize,
+}
+
+fn vscode_command_to_zaply_action(command: &str) -> Option<&'static str> {
+    Some(match command {
+        "workbench.action.files.save" => "workspace::Save",
+        "workbench.action.files.saveAll" => "workspace::SaveAll",
+        "workbench.action.closeActiveEditor" => "pane::CloseActiveItem",
+        "workbench.action.quickOpen" => "file_finder::Toggle",
+        "workbench.action.showCommands" => "command_palette::Toggle",
+        "workbench.action.findInFiles" => "project_search::ToggleFocus",
+        "workbench.action.terminal.toggleTerminal" => "workspace::ToggleBottomDock",
+        "workbench.action.navigateBack" => "pane::GoBack",
+        "workbench.action.navigateForward" => "pane::GoForward",
+        "workbench.action.gotoLine" => "go_to_line::Toggle",
+        "editor.action.clipboardCopyAction" => "editor::Copy",
+        "editor.action.clipboardCutAction" => "editor::Cut",
+        "editor.action.clipboardPasteAction" => "editor::Paste",
+        "editor.action.undo" => "editor::Undo",
+        "editor.action.redo" => "editor::Redo",
+        "editor.action.commentLine" => "editor::ToggleComments",
+        "editor.action.rename" => "editor::Rename",
+        "editor.action.formatDocument" => "editor::Format",
+        "editor.action.triggerSuggest" => "editor::ShowCompletions",
+        _ => return None,
+    })
+}
+
+fn convert_vscode_keystroke(key: &str) -> Option<String> {
+    let mut converted_chords = Vec::new();
+    for chord in key.split_whitespace() {
+        let parts: Vec<&str> = chord.split('+').collect();
+        let (modifiers, key_part) = parts.split_at(parts.len().saturating_sub(1));
+        let key_name = key_part.first().copied()?;
+        let mut tokens: Vec<String> = Vec::new();
+        for modifier in modifiers {
+            let token = match modifier.to_ascii_lowercase().as_str() {
+                "ctrl" | "control" => "ctrl",
+                "alt" | "option" => "alt",
+                "shift" => "shift",
+                "cmd" | "command" | "meta" | "win" | "super" => "cmd",
+                _ => return None,
+            };
+            tokens.push(token.to_string());
+        }
+        let lowered_key = key_name.to_ascii_lowercase();
+        let key_token = match lowered_key.as_str() {
+            "arrowup" => "up",
+            "arrowdown" => "down",
+            "arrowleft" => "left",
+            "arrowright" => "right",
+            "esc" => "escape",
+            "return" => "enter",
+            "del" => "delete",
+            " " => "space",
+            _ => lowered_key.as_str(),
+        };
+        if key_token.is_empty() {
+            return None;
+        }
+        tokens.push(key_token.to_string());
+        converted_chords.push(tokens.join("-"));
+    }
+    if converted_chords.is_empty() {
+        None
+    } else {
+        Some(converted_chords.join(" "))
+    }
+}
+
+/// Returns `None` when the entry should be skipped because its `when`
+/// clause has no Zaply equivalent; otherwise the keymap context to use
+/// (`None` for a global binding).
+fn convert_vscode_when_clause(when: Option<&str>) -> Option<Option<String>> {
+    match when {
+        None => Some(None),
+        Some(when) if when.contains("editorTextFocus") || when.contains("editorFocus") => {
+            Some(Some("Editor".to_string()))
+        }
+        Some(when) if when.contains("terminalFocus") || when.contains("terminalIsFocus") => {
+            Some(Some("Terminal".to_string()))
+        }
+        Some(_) => None,
+    }
+}
+
+/// Converts the contents of a VS Code `keybindings.json` file into Zaply
+/// keybindings. Only the commands in `vscode_command_to_zaply_action` are
+/// converted; everything else is counted as skipped so the caller can
+/// report exactly what did not come across.
+pub fn convert_vscode_keybindings(content: &str) -> Result<VsCodeKeybindingsConversion> {
+    let entries: Vec<Value> =
+        serde_json_lenient::from_str(content).context("Parsing the keybindings file")?;
+    let mut conversion = VsCodeKeybindingsConversion::default();
+    for entry in &entries {
+        let Some(key) = entry.get("key").and_then(Value::as_str) else {
+            conversion.skipped += 1;
+            continue;
+        };
+        let Some(command) = entry.get("command").and_then(Value::as_str) else {
+            conversion.skipped += 1;
+            continue;
+        };
+        if command.starts_with('-') {
+            conversion.skipped += 1;
+            continue;
+        }
+        let Some(action) = vscode_command_to_zaply_action(command) else {
+            conversion.skipped += 1;
+            continue;
+        };
+        let Some(keystrokes) = convert_vscode_keystroke(key) else {
+            conversion.skipped += 1;
+            continue;
+        };
+        let when = entry.get("when").and_then(Value::as_str);
+        let Some(context) = convert_vscode_when_clause(when) else {
+            conversion.skipped += 1;
+            continue;
+        };
+        conversion.bindings.push(ConvertedKeybinding {
+            keystrokes,
+            action: action.to_string(),
+            context,
+        });
+    }
+    Ok(conversion)
+}
+
+/// Merges converted keybindings into the contents of the user's keymap
+/// file and returns the new file contents. Existing sections are kept;
+/// the converted bindings are appended as new sections grouped by
+/// context. Comments in the existing file are not preserved.
+pub fn merge_converted_keybindings(
+    existing_keymap_content: &str,
+    conversion: &VsCodeKeybindingsConversion,
+) -> Result<String> {
+    let mut sections: Vec<Value> = if existing_keymap_content.trim().is_empty() {
+        Vec::new()
+    } else {
+        serde_json_lenient::from_str(existing_keymap_content)
+            .context("Parsing the existing keymap file")?
+    };
+    let mut bindings_by_context: Vec<(Option<String>, Map<String, Value>)> = Vec::new();
+    for binding in &conversion.bindings {
+        let position = bindings_by_context
+            .iter()
+            .position(|(context, _)| context == &binding.context);
+        let bindings = match position {
+            Some(position) => &mut bindings_by_context[position].1,
+            None => {
+                bindings_by_context.push((binding.context.clone(), Map::new()));
+                &mut bindings_by_context.last_mut().expect("just pushed").1
+            }
+        };
+        bindings.insert(
+            binding.keystrokes.clone(),
+            Value::String(binding.action.clone()),
+        );
+    }
+    for (context, bindings) in bindings_by_context {
+        let mut section = Map::new();
+        if let Some(context) = context {
+            section.insert("context".to_string(), Value::String(context));
+        }
+        section.insert("bindings".to_string(), Value::Object(bindings));
+        sections.push(Value::Object(section));
+    }
+    let mut rendered = serde_json::to_string_pretty(&Value::Array(sections))?;
+    rendered.push('\n');
+    Ok(rendered)
+}
+
+#[cfg(test)]
+mod keybinding_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn converts_common_bindings_and_counts_skips() {
+        let content = r#"[
+            { "key": "ctrl+shift+p", "command": "workbench.action.showCommands" },
+            { "key": "ctrl+s", "command": "workbench.action.files.save", "when": "editorTextFocus" },
+            { "key": "ctrl+k ctrl+c", "command": "editor.action.commentLine", "when": "editorTextFocus" },
+            { "key": "ctrl+x", "command": "-editor.action.clipboardCutAction" },
+            { "key": "ctrl+alt+z", "command": "some.extension.command" },
+            { "key": "ctrl+g", "command": "workbench.action.gotoLine", "when": "someUnknownFocus" }
+        ]"#;
+        let conversion = convert_vscode_keybindings(content).expect("conversion succeeds");
+        assert_eq!(conversion.bindings.len(), 3);
+        assert_eq!(conversion.skipped, 3);
+        assert_eq!(conversion.bindings[0].keystrokes, "ctrl-shift-p");
+        assert_eq!(conversion.bindings[0].action, "command_palette::Toggle");
+        assert_eq!(conversion.bindings[0].context, None);
+        assert_eq!(conversion.bindings[1].context.as_deref(), Some("Editor"));
+        assert_eq!(conversion.bindings[2].keystrokes, "ctrl-k ctrl-c");
+    }
+
+    #[test]
+    fn merges_into_existing_keymap() {
+        let conversion = convert_vscode_keybindings(
+            r#"[{ "key": "ctrl+s", "command": "workbench.action.files.save" }]"#,
+        )
+        .expect("conversion succeeds");
+        let merged = merge_converted_keybindings("", &conversion).expect("merge succeeds");
+        assert!(merged.contains("\"ctrl-s\": \"workspace::Save\""));
+        let merged_again =
+            merge_converted_keybindings(&merged, &conversion).expect("second merge succeeds");
+        let sections: Vec<Value> =
+            serde_json_lenient::from_str(&merged_again).expect("merged keymap parses");
+        assert_eq!(sections.len(), 2);
+    }
+}

@@ -22,7 +22,7 @@ use ui::{
 pub use workspace::welcome::ShowWelcome;
 use workspace::welcome::WelcomePage;
 use workspace::{
-    AppState, Workspace, WorkspaceId,
+    AppState, DirectoryLister, OpenPathPromptMode, Workspace, WorkspaceId,
     dock::DockPosition,
     item::{Item, ItemEvent},
     notifications::NotifyResultExt as _,
@@ -49,6 +49,18 @@ pub struct ImportVsCodeSettings {
 #[action(namespace = zaply)]
 #[serde(deny_unknown_fields)]
 pub struct ImportCursorSettings {
+    #[serde(default)]
+    pub skip_prompt: bool,
+}
+
+/// Imports keybindings from a Visual Studio Code keybindings file that
+/// the user selects. This is a one-time conversion: the file is read
+/// once, converted, and merged into the user's Zaply keymap. Zaply never
+/// reads the VS Code configuration folders on its own.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Deserialize, JsonSchema, Action)]
+#[action(namespace = zaply)]
+#[serde(deny_unknown_fields)]
+pub struct ImportVsCodeKeybindings {
     #[serde(default)]
     pub skip_prompt: bool,
 }
@@ -148,6 +160,17 @@ pub fn init(cx: &mut App) {
                         cx,
                     )
                     .await
+                })
+                .detach();
+        });
+
+        workspace.register_action(|_workspace, _: &ImportVsCodeKeybindings, window, cx| {
+            let fs = <dyn Fs>::global(cx);
+            let workspace = cx.weak_entity();
+
+            window
+                .spawn(cx, async move |cx: &mut AsyncWindowContext| {
+                    handle_import_vscode_keybindings(workspace, fs, cx).await
                 })
                 .detach();
         });
@@ -712,4 +735,98 @@ mod persistence {
             }
         }
     }
+}
+
+pub async fn handle_import_vscode_keybindings(
+    workspace: WeakEntity<Workspace>,
+    fs: Arc<dyn Fs>,
+    cx: &mut AsyncWindowContext,
+) {
+    let Ok(path_receiver) = workspace.update_in(cx, |workspace, window, cx| {
+        workspace.prompt_for_open_path(
+            gpui::PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: false,
+                prompt: Some("Select a VS Code keybindings.json file".into()),
+            },
+            DirectoryLister::Local(workspace.project().clone(), fs.clone()),
+            OpenPathPromptMode::SelectPath,
+            window,
+            cx,
+        )
+    }) else {
+        return;
+    };
+
+    let Some(prompt_result) = path_receiver.await else {
+        return;
+    };
+    let Some(path) = prompt_result.paths.into_iter().next() else {
+        return;
+    };
+
+    let show_error = |cx: &mut AsyncWindowContext, message: String| {
+        let _ = cx.prompt(gpui::PromptLevel::Info, &message, None, &["OK"]);
+    };
+
+    let content = match fs.load(&path).await {
+        Ok(content) => content,
+        Err(err) => {
+            zlog::error!("{err:?}");
+            show_error(cx, format!("Could not read the keybindings file: {err}"));
+            return;
+        }
+    };
+
+    let conversion = match settings::convert_vscode_keybindings(&content) {
+        Ok(conversion) => conversion,
+        Err(err) => {
+            zlog::error!("{err:?}");
+            show_error(cx, format!("Could not parse the keybindings file: {err}"));
+            return;
+        }
+    };
+
+    let keymap_path = paths::keymap_file();
+    let existing_content = fs.load(keymap_path).await.unwrap_or_default();
+    let merged = match settings::merge_converted_keybindings(&existing_content, &conversion) {
+        Ok(merged) => merged,
+        Err(err) => {
+            zlog::error!("{err:?}");
+            show_error(
+                cx,
+                format!("Could not update your keymap file: {err}"),
+            );
+            return;
+        }
+    };
+
+    if let Err(err) = fs.write(keymap_path, merged.as_bytes()).await {
+        zlog::error!("{err:?}");
+        show_error(cx, format!("Could not write your keymap file: {err}"));
+        return;
+    }
+
+    let imported_count = conversion.bindings.len();
+    let skipped_count = conversion.skipped;
+    let _ = workspace.update_in(cx, |workspace, _, cx| {
+        let message = if skipped_count > 0 {
+            format!(
+                "Imported {imported_count} VS Code keybindings. \
+                 {skipped_count} entries were skipped because they have no Zaply equivalent."
+            )
+        } else {
+            format!("Imported {imported_count} VS Code keybindings.")
+        };
+        let confirmation_toast = StatusToast::new(message, cx, |this, _| {
+            this.icon(
+                Icon::new(IconName::Check)
+                    .size(IconSize::Small)
+                    .color(Color::Success),
+            )
+            .dismiss_button(true)
+        });
+        workspace.toggle_status_toast(confirmation_toast, cx);
+    });
 }

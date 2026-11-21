@@ -90,6 +90,7 @@ use std::{
 use terminal_view::terminal_panel::{self, TerminalPanel};
 use theme::{ActiveTheme, SystemAppearance, ThemeRegistry};
 use theme_settings::{ThemeSettings, load_user_theme};
+use notifications::status_toast::StatusToast;
 use ui::{Navigable, NavigableEntry, PopoverMenuHandle, TintColor, prelude::*};
 use util::markdown::MarkdownString;
 use util::rel_path::RelPath;
@@ -132,6 +133,14 @@ actions!(
         /// Opens the agent audit log, which records the tool calls the agent
         /// ran and the permission decision made for each of them.
         OpenAgentAuditLog,
+        /// Export the user's settings and keymap to a single file.
+        ExportSettings,
+        /// Import settings and keymap from a settings export file.
+        ImportSettings,
+        /// Create a new project from a built-in template.
+        NewProjectFromTemplate,
+        /// Show the local-only API usage counts.
+        OpenApiUsage,
         /// Opens project-specific settings file.
         OpenProjectSettingsFile,
         /// Opens the tasks panel.
@@ -225,6 +234,30 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &OpenAgentAuditLog, cx| {
         with_active_or_new_workspace(cx, |workspace, window, cx| {
             open_agent_audit_log(workspace, window, cx);
+        });
+    });
+
+    cx.on_action(|_: &ExportSettings, cx| {
+        with_active_or_new_workspace(cx, |workspace, window, cx| {
+            export_settings(workspace, window, cx);
+        });
+    });
+
+    cx.on_action(|_: &ImportSettings, cx| {
+        with_active_or_new_workspace(cx, |workspace, window, cx| {
+            import_settings(workspace, window, cx);
+        });
+    });
+
+    cx.on_action(|_: &NewProjectFromTemplate, cx| {
+        with_active_or_new_workspace(cx, |workspace, window, cx| {
+            create_project_from_template(workspace, window, cx);
+        });
+    });
+
+    cx.on_action(|_: &OpenApiUsage, cx| {
+        with_active_or_new_workspace(cx, |workspace, window, cx| {
+            open_api_usage(workspace, window, cx);
         });
     });
 
@@ -1822,6 +1855,373 @@ fn quit(_: &Quit, cx: &mut App) {
         anyhow::Ok(())
     })
     .detach_and_log_err(cx);
+}
+
+fn settings_transfer_toast(
+    workspace: &mut Workspace,
+    message: String,
+    succeeded: bool,
+    cx: &mut Context<Workspace>,
+) {
+    let toast = StatusToast::new(message, cx, |this, _| {
+        this.icon(
+            Icon::new(if succeeded {
+                IconName::Check
+            } else {
+                IconName::Close
+            })
+            .size(IconSize::Small)
+            .color(if succeeded {
+                Color::Success
+            } else {
+                Color::Error
+            }),
+        )
+        .dismiss_button(true)
+    });
+    workspace.toggle_status_toast(toast, cx);
+}
+
+/// Exports the user's settings and keymap files into a single JSON file
+/// in a folder the user picks. The export is a plain file on disk; it is
+/// never uploaded anywhere.
+fn export_settings(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let fs = workspace.app_state().fs.clone();
+    let path_receiver = workspace.prompt_for_open_path(
+        gpui::PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Choose a folder for the settings export".into()),
+        },
+        DirectoryLister::Local(workspace.project().clone(), fs.clone()),
+        workspace::OpenPathPromptMode::SelectPath,
+        window,
+        cx,
+    );
+    cx.spawn_in(window, async move |workspace, cx| {
+        let Some(prompt_result) = path_receiver.await else {
+            return;
+        };
+        let Some(folder) = prompt_result.paths.into_iter().next() else {
+            return;
+        };
+        let settings_content = fs.load(paths::settings_file()).await.unwrap_or_default();
+        let keymap_content = fs.load(paths::keymap_file()).await.unwrap_or_default();
+        let bundle = serde_json::json!({
+            "format": "zaply-settings-export",
+            "version": 1,
+            "settings": settings_content,
+            "keymap": keymap_content,
+        });
+        let export_path = folder.join("zaply-settings-export.json");
+        let write_result = fs
+            .write(
+                &export_path,
+                serde_json::to_string_pretty(&bundle)
+                    .unwrap_or_default()
+                    .as_bytes(),
+            )
+            .await;
+        let _ = workspace.update_in(cx, |workspace, _, cx| match write_result {
+            Ok(()) => settings_transfer_toast(
+                workspace,
+                format!("Settings exported to {}", export_path.display()),
+                true,
+                cx,
+            ),
+            Err(err) => settings_transfer_toast(
+                workspace,
+                format!("Could not export settings: {err}"),
+                false,
+                cx,
+            ),
+        });
+    })
+    .detach();
+}
+
+/// Imports settings and keymap from a settings export file the user
+/// picks. The current files are first copied to `.zaply-backup` files
+/// next to the originals, so the import can be undone by hand. Zaply
+/// reloads settings and keymap files automatically when they change.
+fn import_settings(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let fs = workspace.app_state().fs.clone();
+    let path_receiver = workspace.prompt_for_open_path(
+        gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Select a Zaply settings export file".into()),
+        },
+        DirectoryLister::Local(workspace.project().clone(), fs.clone()),
+        workspace::OpenPathPromptMode::SelectPath,
+        window,
+        cx,
+    );
+    cx.spawn_in(window, async move |workspace, cx| {
+        let Some(prompt_result) = path_receiver.await else {
+            return;
+        };
+        let Some(path) = prompt_result.paths.into_iter().next() else {
+            return;
+        };
+        let outcome: anyhow::Result<()> = async {
+            let content = fs.load(&path).await?;
+            let bundle: serde_json::Value = serde_json::from_str(&content)?;
+            if bundle.get("format").and_then(serde_json::Value::as_str)
+                != Some("zaply-settings-export")
+            {
+                anyhow::bail!("This file is not a Zaply settings export");
+            }
+            for (file_name, key) in [("settings.json", "settings"), ("keymap.json", "keymap")] {
+                let Some(new_content) = bundle.get(key).and_then(serde_json::Value::as_str)
+                else {
+                    continue;
+                };
+                let target = paths::config_dir().join(file_name);
+                if let Ok(existing) = fs.load(&target).await {
+                    let backup = target.with_file_name(format!("{file_name}.zaply-backup"));
+                    fs.write(&backup, existing.as_bytes()).await?;
+                }
+                fs.write(&target, new_content.as_bytes()).await?;
+            }
+            Ok(())
+        }
+        .await;
+        let _ = workspace.update_in(cx, |workspace, _, cx| match outcome {
+            Ok(()) => settings_transfer_toast(
+                workspace,
+                "Settings imported. Your previous files were saved with a .zaply-backup suffix."
+                    .to_string(),
+                true,
+                cx,
+            ),
+            Err(err) => settings_transfer_toast(
+                workspace,
+                format!("Could not import settings: {err}"),
+                false,
+                cx,
+            ),
+        });
+    })
+    .detach();
+}
+
+/// Creates a project from one of the built-in templates (in the
+/// `templates` asset folder) in a folder the user picks. Files are only
+/// written into a folder where none of the template's files exist yet.
+fn create_project_from_template(
+    workspace: &mut Workspace,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) {
+    let fs = workspace.app_state().fs.clone();
+    cx.spawn_in(window, async move |workspace, cx| {
+        const TEMPLATES: [(&str, &str); 4] = [
+            ("python-package", "Python package"),
+            ("static-website", "Static website"),
+            ("rust-binary", "Rust binary"),
+            ("data-science", "Data science"),
+        ];
+        let mut answers: Vec<&str> = TEMPLATES.iter().map(|(_, label)| *label).collect();
+        answers.push("Cancel");
+        let prompt = cx.prompt(
+            gpui::PromptLevel::Info,
+            "Create a project from a template",
+            Some("Choose a template. You will then pick a folder to create the project in."),
+            &answers,
+        );
+        let Some(choice) = prompt.await.ok() else {
+            return;
+        };
+        let Some((template_name, _)) = TEMPLATES.get(choice) else {
+            return;
+        };
+        let template_name = *template_name;
+
+        let Ok((path_receiver, asset_source)) =
+            workspace.update_in(cx, |workspace, window, cx| {
+                let path_receiver = workspace.prompt_for_open_path(
+                    gpui::PathPromptOptions {
+                        files: false,
+                        directories: true,
+                        multiple: false,
+                        prompt: Some("Choose a folder for the new project".into()),
+                    },
+                    DirectoryLister::Local(workspace.project().clone(), fs.clone()),
+                    workspace::OpenPathPromptMode::SelectPath,
+                    window,
+                    cx,
+                );
+                (path_receiver, cx.asset_source().clone())
+            })
+        else {
+            return;
+        };
+
+        let Some(prompt_result) = path_receiver.await else {
+            return;
+        };
+        let Some(folder) = prompt_result.paths.into_iter().next() else {
+            return;
+        };
+
+        let outcome: anyhow::Result<usize> = async {
+            let prefix = format!("templates/{template_name}");
+            let files = asset_source.list(&prefix)?;
+            let mut written = 0;
+            for file in &files {
+                let file_path: &str = file;
+                let Some(relative) = file_path.strip_prefix(&format!("{prefix}/")) else {
+                    continue;
+                };
+                if relative.is_empty() {
+                    continue;
+                }
+                let target = folder.join(relative);
+                if fs.is_file(&target).await {
+                    anyhow::bail!(
+                        "{} already exists; choose an empty folder",
+                        target.display()
+                    );
+                }
+                if let Some(parent) = target.parent() {
+                    fs.create_dir(parent).await?;
+                }
+                let bytes = asset_source
+                    .load(file_path)?
+                    .ok_or_else(|| anyhow::anyhow!("Missing template file {file_path}"))?;
+                fs.write(&target, &bytes).await?;
+                written += 1;
+            }
+            Ok(written)
+        }
+        .await;
+
+        let _ = workspace.update_in(cx, |workspace, _, cx| match outcome {
+            Ok(count) => settings_transfer_toast(
+                workspace,
+                format!(
+                    "Created {count} files from the template in {}",
+                    folder.display()
+                ),
+                true,
+                cx,
+            ),
+            Err(err) => settings_transfer_toast(
+                workspace,
+                format!("Could not create the project: {err}"),
+                false,
+                cx,
+            ),
+        });
+    })
+    .detach();
+}
+
+/// Renders the local API usage counts as a plain-text report. The
+/// counts live in a JSON file in the data directory and never leave the
+/// device.
+fn format_api_usage_report(content: &str) -> String {
+    let mut report = String::from(
+        "API usage recorded on this device\n\
+        \n\
+        These counts come from the token usage your providers report for agent requests.\n\
+        They are kept only on this device and are never transmitted anywhere.\n\
+        Delete the api-usage.json file in the Zaply data directory to reset them.\n",
+    );
+    let parsed: serde_json::Result<serde_json::Value> = serde_json::from_str(content);
+    let Ok(parsed) = parsed else {
+        report.push_str("\nNo usage has been recorded yet.\n");
+        return report;
+    };
+    let Some(entries) = parsed.get("entries").and_then(serde_json::Value::as_array) else {
+        report.push_str("\nNo usage has been recorded yet.\n");
+        return report;
+    };
+    if entries.is_empty() {
+        report.push_str("\nNo usage has been recorded yet.\n");
+        return report;
+    }
+    let mut total_input = 0u64;
+    let mut total_output = 0u64;
+    report.push('\n');
+    for entry in entries {
+        let get_string = |key: &str| {
+            entry
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("?")
+                .to_string()
+        };
+        let get_count = |key: &str| entry.get(key).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        let input = get_count("input_tokens");
+        let output = get_count("output_tokens");
+        total_input += input;
+        total_output += output;
+        report.push_str(&format!(
+            "{}  {} / {}: input {}, output {}, cache write {}, cache read {}\n",
+            get_string("day"),
+            get_string("provider"),
+            get_string("model"),
+            input,
+            output,
+            get_count("cache_creation_input_tokens"),
+            get_count("cache_read_input_tokens"),
+        ));
+    }
+    report.push_str(&format!(
+        "\nTotals: input {total_input} tokens, output {total_output} tokens\n"
+    ));
+    report
+}
+
+fn open_api_usage(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let app_state = workspace.app_state();
+    let fs = app_state.fs.clone();
+    cx.spawn_in(window, async move |workspace, cx| {
+        let contents = fs
+            .load(paths::api_usage_file())
+            .await
+            .map(|content| format_api_usage_report(&content))
+            .unwrap_or_else(|_| {
+                format_api_usage_report("")
+            });
+        maybe!(async move {
+            let project = workspace
+                .read_with(cx, |workspace, _| workspace.project().clone())
+                .ok()?;
+            let buffer = project
+                .update(cx, |project, cx| project.create_buffer(None, false, cx))
+                .await
+                .ok()?;
+            buffer.update(cx, |buffer, cx| {
+                buffer.set_capability(Capability::ReadOnly, cx);
+                buffer.set_text(contents, cx);
+            });
+
+            let buffer = cx.new(|cx| {
+                MultiBuffer::singleton(buffer, cx).with_title("API Usage".into())
+            });
+
+            let editor = cx
+                .new_window_entity(|window, cx| {
+                    let mut editor = Editor::for_multibuffer(buffer, Some(project), window, cx);
+                    editor.set_read_only(true);
+                    editor
+                })
+                .ok()?;
+
+            workspace
+                .update_in(cx, |workspace, window, cx| {
+                    workspace.add_item_to_active_pane(Box::new(editor), None, true, window, cx);
+                })
+                .ok()
+        })
+        .await;
+    })
+    .detach();
 }
 
 fn open_log_file(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {

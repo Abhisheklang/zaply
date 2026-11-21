@@ -1339,7 +1339,7 @@
     "default_profile": "write",
     "profiles": {
       "write": {
-        "name": "Write",
+        "name": "Agent",
         "enable_all_context_servers": true,
         "tools": {
           "apply_code_action": true,
@@ -1365,6 +1365,28 @@
           "skill": true,
           "spawn_agent": true,
           "terminal": true,
+          "write_file": true,
+        },
+      },
+      "edit": {
+        "name": "Edit",
+        "enable_all_context_servers": true,
+        "tools": {
+          "apply_code_action": true,
+          "ask_user": false,
+          "copy_path": true,
+          "create_directory": true,
+          "diagnostics": true,
+          "edit_file": true,
+          "find_path": true,
+          "find_references": true,
+          "get_code_actions": true,
+          "go_to_definition": true,
+          "grep": true,
+          "list_directory": true,
+          "read_file": true,
+          "rename_symbol": true,
+          "skill": true,
           "write_file": true,
         },
       },
