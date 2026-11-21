@@ -73,14 +73,27 @@ jobs:
         run: cargo build --release --locked --package collab --bin collab
 
       - name: Smoke-test the server
+        # Run from a clean directory: from the repository root the server
+        # would load the development defaults in crates/collab/.env.toml
+        # over these environment variables. Production deployments have no
+        # such file and are configured by the environment alone, which is
+        # what this step exercises.
+        working-directory: ${{ runner.temp }}
         env:
           HTTP_PORT: "8080"
           DATABASE_URL: postgres://postgres@localhost:5432/zaply_collab_test
           DATABASE_MAX_CONNECTIONS: "5"
           ZAPLY_ENVIRONMENT: development
+          ZAPLY_CLOUD_INTERNAL_API_KEY: ci-smoke-test-key
         run: |
-          ./target/release/collab version
-          ./target/release/collab serve api &
+          "$GITHUB_WORKSPACE/target/release/collab" version
+          # The server does not apply migrations itself: create the schema
+          # from the bundled SQL file before starting it.
+          command -v psql > /dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          for schema_file in "$GITHUB_WORKSPACE"/crates/collab/migrations/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$schema_file"
+          done
+          "$GITHUB_WORKSPACE/target/release/collab" serve api &
           server_pid=$!
           trap 'kill $server_pid 2>/dev/null || true' EXIT
           for attempt in $(seq 1 60); do

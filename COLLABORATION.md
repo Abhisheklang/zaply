@@ -65,9 +65,11 @@ installed by `script/linux` on Debian/Ubuntu.
 cargo build --release --package collab --bin collab
 ```
 
-Configure the server through environment variables (a `.env.toml` file
-next to the binary also works; see `crates/collab/.env.toml` for the
-development defaults):
+Configure the server through environment variables. One warning: if a
+file exists at `crates/collab/.env.toml` relative to the directory you
+start the server from, its values override the environment. That file
+holds development defaults (see `crates/collab/.env.toml`), so start the
+server from a directory without one in production:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
@@ -87,8 +89,11 @@ Then run it:
 `serve api` runs only the HTTP API, `serve collab` only the realtime
 protocol, and `serve all` runs both in one process, which is what most
 self-hosters want. Check `http://localhost:8080/healthz` (or your
-configured port) to confirm the server is up. Database migrations run
-automatically when the server connects.
+configured port) to confirm the server is up. Before the first start,
+create the database schema by applying the SQL file in
+`crates/collab/migrations/` to your database, for example with
+`psql "$DATABASE_URL" -f crates/collab/migrations/*.sql`. The server
+does not apply migrations itself.
 
 For production, put the server behind HTTPS (the editor expects a
 `https://` address for anything except localhost), run PostgreSQL with
