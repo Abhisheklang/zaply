@@ -112,7 +112,7 @@ class ZaplyProcess:
             "DISPLAY": DISPLAY,
             "VK_ICD_FILENAMES": ICD_PATH,
             "ZAPLY_ALLOW_EMULATED_GPU": "1",
-            "ZAPLY_ALLOW_ROOT": "1",
+            "ZAPLY_ALLOW_ROOT": "true",
         }
         self.started_at = time.monotonic()
         self.process = subprocess.Popen(

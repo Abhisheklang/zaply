@@ -1,8 +1,16 @@
-# Zaply Server
+# Zaply collaboration server
 
-This crate is what we run at https://example.com.
+This crate is the optional, self-hosted collaboration server for
+Zaply. It is not bundled with the editor, and the Zaply project runs
+no hosted collaboration service: anyone who wants multi-user editing
+builds and runs this server themselves, and Zaply connects to the
+address set as the server URL in its settings. See COLLABORATION.md
+in the repository root for the setup guide.
 
-It contains our back-end logic for collaboration, to which we connect from the Zaply client via a websocket after authenticating via https://github.com/Abhisheklang/zaply which is a separate repo running on Vercel.
+Continuous integration builds this binary on every change to the
+server crates and smoke-tests it against PostgreSQL: the server must
+start and answer its /healthz endpoint (workflow:
+build-zaply-collab.yml).
 
 # Local Development
 

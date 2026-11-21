@@ -17,10 +17,19 @@ editors. No other editor was measured, and no comparison is claimed.
 
 | Measurement | Zaply 1.0 | Zaply 3.0 (this build) |
 | --- | --- | --- |
-| Startup, launch to first window | 4.90 s | pending |
-| Startup, launch to settled frame | 7.01 s | pending |
-| Open a 20 MB file to settled frame | 17.58 s | pending |
-| Project search for a unique token to settled frame | 15.00 s | pending |
+| Startup, launch to first window | 4.90 s | 0.78 s |
+| Startup, launch to settled frame | 7.01 s | 6.40 s |
+| Open a 20 MB file to settled frame | 17.58 s | 6.06 s |
+| Project search for a unique token to settled frame | 15.00 s | 2.69 s |
+
+The 3.0 column was measured on the 3.0 development build on
+2026-11-21, on this same machine with this same script. Treat the
+comparison as indicative, not exact: this is a shared virtual machine,
+load from other tenants varies between runs, and the two columns were
+measured hours apart. The numbers were not produced by an isolated
+A/B test of the scan-exclusions change described below, so no part of
+the difference is attributed to any single change; they are reported
+because they are what the shipped script measured for the two builds.
 
 "Settled frame" means the rendered output stopped changing for one
 second. On a software renderer these times are dominated by first-time
