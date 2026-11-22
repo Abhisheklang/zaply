@@ -279,8 +279,6 @@ message Envelope {
     LspExtOpenDocs lsp_ext_open_docs = 283;
     LspExtOpenDocsResponse lsp_ext_open_docs_response = 284;
 
-    reserved 285, 286, 287;
-    reserved "sync_extensions", "sync_extensions_response", "install_extension";
 
     OpenUnstagedDiff open_unstaged_diff = 288;
     OpenUnstagedDiffResponse open_unstaged_diff_response = 289;
@@ -430,8 +428,6 @@ message Envelope {
 
     GitDeleteBranch git_delete_branch = 400;
 
-    reserved 401;
-    reserved "external_extension_agents_updated";
 
     GitCreateRemote git_create_remote = 402;
     GitRemoveRemote git_remove_remote = 403;
@@ -540,13 +536,17 @@ message Envelope {
   reserved 259;
   reserved 270;
   reserved 280 to 281;
+  reserved 285 to 287;
   reserved 332 to 333;
   reserved 394 to 396;
+  reserved 401;
   reserved 429 to 430;
   reserved 211 to 216, 232 to 233;
   reserved 397 to 398;
   reserved 406 to 408;
   reserved 433 to 439;
+  reserved "sync_extensions", "sync_extensions_response", "install_extension",
+      "external_extension_agents_updated";
 }
 
 message Hello {

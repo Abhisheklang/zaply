@@ -1,8 +1,57 @@
 use crate::db::ExtensionId;
-use cloud_api_types::ExtensionProvides;
 use collections::BTreeSet;
 use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
+use strum::EnumString;
 use time::PrimitiveDateTime;
+
+/// What an extension provides, recorded on each extension version row.
+/// The extension catalog itself is gone; this type remains only so the
+/// retained database tables keep compiling.
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    EnumString,
+    strum::Display,
+    strum::EnumIter,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum ExtensionProvides {
+    Languages,
+    Themes,
+    IconThemes,
+    Grammars,
+    LanguageServers,
+    DebugAdapters,
+    ContextServers,
+    /// Deprecated
+    AgentServers,
+    /// Deprecated
+    SlashCommands,
+    /// Deprecated
+    IndexedDocsProviders,
+    Snippets,
+}
+
+impl ExtensionProvides {
+    pub fn is_deprecated(&self) -> bool {
+        matches!(
+            self,
+            ExtensionProvides::AgentServers
+                | ExtensionProvides::SlashCommands
+                | ExtensionProvides::IndexedDocsProviders
+        )
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "extension_versions")]

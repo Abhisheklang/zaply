@@ -7491,25 +7491,25 @@ dependencies = [
  "tree-sitter-css",
  "tree-sitter-diff",
  "tree-sitter-gitcommit",
+ "tree-sitter-glsl",
  "tree-sitter-go",
  "tree-sitter-gomod",
  "tree-sitter-gowork",
+ "tree-sitter-groovy",
+ "tree-sitter-html",
+ "tree-sitter-java",
  "tree-sitter-jsdoc",
  "tree-sitter-json",
+ "tree-sitter-kotlin-ng",
  "tree-sitter-md",
+ "tree-sitter-properties",
+ "tree-sitter-proto",
  "tree-sitter-python",
  "tree-sitter-regex",
  "tree-sitter-rust",
  "tree-sitter-typescript",
  "tree-sitter-yaml",
  "util",
- "tree-sitter-glsl",
- "tree-sitter-groovy",
- "tree-sitter-html",
- "tree-sitter-java",
- "tree-sitter-kotlin-ng",
- "tree-sitter-properties",
- "tree-sitter-proto",
 ]
 
 [[package]]
@@ -18569,6 +18569,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-glsl"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df0ee57cbf4c2b35d3a7f17a01bf33c0ef2e85987cb85e516ac8c6904c4e62ac"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-go"
 version = "0.25.0"
 source = "git+https://github.com/zed-industries/tree-sitter-go?rev=6862a49e3c5a7567a6c576420e9a8f944e198a85#6862a49e3c5a7567a6c576420e9a8f944e198a85"
@@ -18596,6 +18606,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-groovy"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a20016017f0865ba902ca50354f92429de5de8df994e64ab7fae087a13c40ed"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-heex"
 version = "0.0.1"
 source = "git+https://github.com/zed-industries/tree-sitter-heex?rev=1dd45142fbb05562e35b2040c6129c9bca346592#1dd45142fbb05562e35b2040c6129c9bca346592"
@@ -18609,6 +18629,16 @@ name = "tree-sitter-html"
 version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "261b708e5d92061ede329babaaa427b819329a9d427a1d710abb0f67bbef63ee"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-java"
+version = "0.23.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0aa6cbcdc8c679b214e616fd3300da67da0e492e066df01bcf5a5921a71e90d6"
 dependencies = [
  "cc",
  "tree-sitter-language",
@@ -18635,6 +18665,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-kotlin-ng"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e800ebbda938acfbf224f4d2c34947a31994b1295ee6e819b65226c7b51b4450"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-language"
 version = "0.1.8"
 source = "git+https://github.com/tree-sitter/tree-sitter?rev=803c6ebaac27d69e1808b45058482e868d073ceb#803c6ebaac27d69e1808b45058482e868d073ceb"
@@ -18643,6 +18683,26 @@ source = "git+https://github.com/tree-sitter/tree-sitter?rev=803c6ebaac27d69e180
 name = "tree-sitter-md"
 version = "0.3.2"
 source = "git+https://github.com/zed-industries/tree-sitter-markdown?rev=b596e737286780d7bfa9fcddceaeeb754574b352#b596e737286780d7bfa9fcddceaeeb754574b352"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-properties"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a6c2f38dea68abd782573bb6ec3dbd14175cce2953f693055743925d785ceeb"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-proto"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "968b11baece8316bb26363c0c2c54900c35b71d4e85e5617dda2687bc4368c2d"
 dependencies = [
  "cc",
  "tree-sitter-language",
@@ -21070,7 +21130,7 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"
 dependencies = [
- "wit-bindgen-rust-macro 0.51.0",
+ "wit-bindgen-rust-macro",
 ]
 
 [[package]]
@@ -21096,7 +21156,7 @@ dependencies = [
  "prettyplease",
  "syn 2.0.117",
  "wasm-metadata 0.244.0",
- "wit-bindgen-core 0.51.0",
+ "wit-bindgen-core",
  "wit-component 0.244.0",
 ]
 
@@ -21111,8 +21171,8 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
- "wit-bindgen-core 0.51.0",
- "wit-bindgen-rust 0.51.0",
+ "wit-bindgen-core",
+ "wit-bindgen-rust",
 ]
 
 [[package]]
@@ -21808,24 +21868,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zaply_glsl"
-version = "0.2.5"
-dependencies = [
-]
-
-[[package]]
-name = "zaply_html"
-version = "0.3.2"
-dependencies = [
-]
-
-[[package]]
-name = "zaply_proto"
-version = "0.3.4"
-dependencies = [
-]
-
-[[package]]
 name = "zbus"
 version = "5.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -22321,64 +22363,4 @@ dependencies = [
  "serde",
  "syn 2.0.117",
  "winnow 1.0.2",
-]
-
-[[package]]
-name = "tree-sitter-glsl"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df0ee57cbf4c2b35d3a7f17a01bf33c0ef2e85987cb85e516ac8c6904c4e62ac"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-groovy"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a20016017f0865ba902ca50354f92429de5de8df994e64ab7fae087a13c40ed"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-java"
-version = "0.23.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0aa6cbcdc8c679b214e616fd3300da67da0e492e066df01bcf5a5921a71e90d6"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-kotlin-ng"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e800ebbda938acfbf224f4d2c34947a31994b1295ee6e819b65226c7b51b4450"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-properties"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a6c2f38dea68abd782573bb6ec3dbd14175cce2953f693055743925d785ceeb"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-proto"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "968b11baece8316bb26363c0c2c54900c35b71d4e85e5617dda2687bc4368c2d"
-dependencies = [
- "cc",
- "tree-sitter-language",
 ]
