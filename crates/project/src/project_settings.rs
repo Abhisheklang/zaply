@@ -212,19 +212,6 @@ pub enum ContextServerSettings {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         oauth: Option<OAuthClientSettings>,
     },
-    Extension {
-        /// Whether the context server is enabled.
-        #[serde(default = "default_true")]
-        enabled: bool,
-        /// If true, run this server on the remote server when using remote development.
-        #[serde(default)]
-        remote: bool,
-        /// The settings for this context server specified by the extension.
-        ///
-        /// Consult the documentation for the context server to see what settings
-        /// are supported.
-        settings: serde_json::Value,
-    },
 }
 
 impl From<settings::ContextServerSettingsContent> for ContextServerSettings {
@@ -238,15 +225,6 @@ impl From<settings::ContextServerSettingsContent> for ContextServerSettings {
                 enabled,
                 remote,
                 command,
-            },
-            settings::ContextServerSettingsContent::Extension {
-                enabled,
-                remote,
-                settings,
-            } => ContextServerSettings::Extension {
-                enabled,
-                remote,
-                settings,
             },
             settings::ContextServerSettingsContent::Http {
                 enabled,
@@ -278,15 +256,6 @@ impl Into<settings::ContextServerSettingsContent> for ContextServerSettings {
                 enabled,
                 remote,
                 command,
-            },
-            ContextServerSettings::Extension {
-                enabled,
-                remote,
-                settings,
-            } => settings::ContextServerSettingsContent::Extension {
-                enabled,
-                remote,
-                settings,
             },
             ContextServerSettings::Http {
                 enabled,
@@ -323,19 +292,10 @@ pub struct OAuthClientSettings {
 }
 
 impl ContextServerSettings {
-    pub fn default_extension() -> Self {
-        Self::Extension {
-            enabled: true,
-            remote: false,
-            settings: serde_json::json!({}),
-        }
-    }
-
     pub fn enabled(&self) -> bool {
         match self {
             ContextServerSettings::Stdio { enabled, .. } => *enabled,
             ContextServerSettings::Http { enabled, .. } => *enabled,
-            ContextServerSettings::Extension { enabled, .. } => *enabled,
         }
     }
 
@@ -343,7 +303,6 @@ impl ContextServerSettings {
         match self {
             ContextServerSettings::Stdio { enabled: e, .. } => *e = enabled,
             ContextServerSettings::Http { enabled: e, .. } => *e = enabled,
-            ContextServerSettings::Extension { enabled: e, .. } => *e = enabled,
         }
     }
 }

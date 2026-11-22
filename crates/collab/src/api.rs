@@ -1,11 +1,9 @@
 pub mod events;
-pub mod extensions;
 
 use crate::Result;
 use axum::{headers::Header, http::HeaderName};
 use std::sync::OnceLock;
 
-pub use extensions::fetch_extensions_from_blob_store_periodically;
 
 pub struct CloudflareIpCountryHeader(String);
 

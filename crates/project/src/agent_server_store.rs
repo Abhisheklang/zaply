@@ -193,7 +193,10 @@ pub struct AgentServersUpdated;
 
 impl EventEmitter<AgentServersUpdated> for AgentServerStore {}
 
-static EXTENSION_TO_REGISTRY_IDS: LazyLock<HashMap<&'static str, &'static str>> =
+// Aliases for agent servers that were once distributed as extensions:
+// settings written in that era use the extension id as the key, while the
+// registry uses its own id. Kept so those settings files keep working.
+static LEGACY_AGENT_SERVER_ID_ALIASES: LazyLock<HashMap<&'static str, &'static str>> =
     LazyLock::new(|| {
         HashMap::from_iter([
             ("opencode", "opencode"),
@@ -210,37 +213,6 @@ static EXTENSION_TO_REGISTRY_IDS: LazyLock<HashMap<&'static str, &'static str>> 
     });
 
 impl AgentServerStore {
-    pub fn migrate_agent_server_from_extensions(
-        &mut self,
-        id: Arc<str>,
-        fs: Arc<dyn Fs>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(registry_id) = EXTENSION_TO_REGISTRY_IDS.get(id.as_ref()) else {
-            return;
-        };
-
-        update_settings_file(fs, cx, move |settings, _| {
-            let agent_servers = settings.agent_servers.get_or_insert_default();
-            // Take the old settings
-            let settings = agent_servers.remove(id.as_ref());
-            // If they had both installed, just remove the extension settings, leave theirregistry settings alone
-            if agent_servers.contains_key(*registry_id) {
-                return;
-            }
-            // Insert the old settings, or write new ones so it is "installed" via the registry
-            agent_servers.insert(
-                registry_id.to_string(),
-                settings.unwrap_or_else(|| settings::CustomAgentServerSettings::Registry {
-                    default_mode: None,
-                    env: Default::default(),
-                    default_config_options: HashMap::default(),
-                    favorite_config_option_values: HashMap::default(),
-                }),
-            );
-        });
-    }
-
     pub fn agent_icon(&self, id: &AgentId) -> Option<SharedString> {
         self.external_agents
             .get(id)
@@ -1760,7 +1732,7 @@ impl settings::Settings for AllAgentServersSettings {
                 .into_iter()
                 .map(|(k, v)| {
                     (
-                        EXTENSION_TO_REGISTRY_IDS
+                        LEGACY_AGENT_SERVER_ID_ALIASES
                             .get(&k.as_str())
                             .map(|v| v.to_string())
                             .unwrap_or(k),

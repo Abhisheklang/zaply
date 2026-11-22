@@ -641,7 +641,6 @@ impl AcpV2Connection {
         for (name, configuration) in configurations {
             match &*configuration {
                 ContextServerConfiguration::Custom { command, .. }
-                | ContextServerConfiguration::Extension { command, .. }
                     if capabilities
                         .mcp
                         .as_ref()

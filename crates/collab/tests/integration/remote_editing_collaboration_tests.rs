@@ -5,7 +5,6 @@ use collections::{HashMap, HashSet};
 use dap::{Capabilities, adapters::DebugTaskDefinition, transport::RequestHandling};
 use debugger_ui::debugger_panel::DebugPanel;
 use editor::{Editor, EditorMode, LSP_REQUEST_DEBOUNCE_TIMEOUT, MultiBuffer};
-use extension::ExtensionHostProxy;
 use fs::{FakeFs, Fs as _, RemoveOptions};
 use futures::StreamExt as _;
 use gpui::{
@@ -105,7 +104,6 @@ async fn test_sharing_an_ssh_remote_project(
                 http_client: remote_http_client,
                 node_runtime: node,
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             false,
@@ -267,7 +265,6 @@ async fn test_ssh_collaboration_git_branches(
                 http_client: remote_http_client,
                 node_runtime: node,
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             false,
@@ -444,7 +441,6 @@ async fn test_ssh_collaboration_git_worktrees(
                 http_client: Arc::new(BlockedHttpClient),
                 node_runtime: NodeRuntime::unavailable(),
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             false,
@@ -720,7 +716,6 @@ async fn test_ssh_collaboration_formatting_with_prettier(
                 http_client: remote_http_client,
                 node_runtime: NodeRuntime::unavailable(),
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             false,
@@ -893,7 +888,6 @@ async fn test_ssh_restarting_language_server_replaces_remote_status(
                 http_client: Arc::new(BlockedHttpClient),
                 node_runtime: NodeRuntime::unavailable(),
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             false,
@@ -1070,7 +1064,6 @@ async fn test_remote_server_debugger(
                 http_client: remote_http_client,
                 node_runtime: node,
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             false,
@@ -1183,7 +1176,6 @@ async fn test_slow_adapter_startup_retries(
                 http_client: remote_http_client,
                 node_runtime: node,
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             false,
@@ -1390,7 +1382,6 @@ async fn test_ssh_remote_worktree_trust(cx_a: &mut TestAppContext, server_cx: &m
                 http_client: remote_http_client,
                 node_runtime: node,
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             true,
@@ -1670,7 +1661,6 @@ async fn test_ssh_document_links_resolve(
                 http_client: remote_http_client,
                 node_runtime: node,
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             true,

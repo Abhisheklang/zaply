@@ -55,7 +55,6 @@ fn mcp_configurations_for_project(
             let configuration = store.configuration_for_server(id)?;
             match &*configuration {
                 ContextServerConfiguration::Custom { remote, .. }
-                | ContextServerConfiguration::Extension { remote, .. }
                     if !is_local && !remote =>
                 {
                     None

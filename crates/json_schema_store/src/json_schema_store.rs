@@ -46,10 +46,10 @@ static ACTION_SCHEMA_CACHE: LazyLock<RwLock<HashMap<String, String>>> =
     LazyLock::new(|| RwLock::new(HashMap::default()));
 
 // Runtime cache for dynamic schemas that depend on runtime state:
-// - "settings": depends on installed fonts, themes, languages, LSP adapters (extensions can add these)
+// - "settings": depends on installed fonts, themes, languages, LSP adapters
 // - "settings/lsp/*": depends on LSP adapter initialization options
-// - "debug_tasks": depends on DAP adapters (extensions can add these)
-// Cache is invalidated via notify_schema_changed() when extensions or DAP registry change.
+// - "debug_tasks": depends on DAP adapters
+// Cache is invalidated via notify_schema_changed() when the DAP registry changes.
 static DYNAMIC_SCHEMA_CACHE: LazyLock<RwLock<HashMap<String, String>>> =
     LazyLock::new(|| RwLock::new(HashMap::default()));
 
@@ -65,20 +65,6 @@ pub fn init(cx: &mut App) {
         cx.global_mut::<SchemaStore>().lsp_stores.push(lsp_store);
     })
     .detach();
-
-    if let Some(extension_events) = extension::ExtensionEvents::try_global(cx) {
-        cx.subscribe(&extension_events, move |_, evt, cx| match evt {
-            extension::Event::ExtensionsInstalledChanged => {
-                cx.update_global::<SchemaStore, _>(|schema_store, cx| {
-                    schema_store.notify_schema_changed(ChangedSchemas::Settings, cx);
-                });
-            }
-            extension::Event::ExtensionUninstalled(_)
-            | extension::Event::ExtensionInstalled(_)
-            | extension::Event::ConfigureExtensionRequested(_) => {}
-        })
-        .detach();
-    }
 
     cx.observe_global::<dap::DapRegistry>(move |cx| {
         cx.update_global::<SchemaStore, _>(|schema_store, cx| {

@@ -1357,10 +1357,6 @@ impl TitleBar {
                         "Icon Themes…",
                         zaply_actions::icon_theme_selector::Toggle::default().boxed_clone(),
                     )
-                    .action(
-                        "Extensions",
-                        zaply_actions::Extensions::default().boxed_clone(),
-                    )
                     .when(ai_enabled, |menu| {
                         menu.separator()
                             .submenu("Panel Layout", move |menu, _window, _cx| {

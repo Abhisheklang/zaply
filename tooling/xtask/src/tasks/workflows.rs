@@ -16,13 +16,7 @@ mod compliance_check;
 mod danger;
 mod deploy_collab;
 mod deploy_docs;
-mod extension_auto_bump;
-mod extension_bump;
-mod extension_tests;
-mod extension_workflow_rollout;
-mod extensions;
 mod nix_build;
-mod publish_extension_cli;
 mod release_nightly;
 mod run_bundling;
 
@@ -233,19 +227,11 @@ pub fn run_workflows(args: GenerateWorkflowArgs) -> Result<()> {
         WorkflowFile::zaply(deploy_collab::deploy_collab),
         WorkflowFile::zaply(deploy_docs::deploy_docs),
         WorkflowFile::zaply(deploy_docs::deploy_nightly_docs),
-        WorkflowFile::zaply(extension_bump::extension_bump),
-        WorkflowFile::zaply(extension_auto_bump::extension_auto_bump),
-        WorkflowFile::zaply(extension_tests::extension_tests),
-        WorkflowFile::zaply(extension_workflow_rollout::extension_workflow_rollout),
         WorkflowFile::zaply(nix_build::nix_build),
-        WorkflowFile::zaply(publish_extension_cli::publish_extension_cli),
         WorkflowFile::zaply(release::release),
         WorkflowFile::zaply(release_nightly::release_nightly),
         WorkflowFile::zaply(run_bundling::run_bundling),
         WorkflowFile::zaply(run_tests::run_tests),
-        /* workflows used for CI/CD in extension repositories */
-        WorkflowFile::extension(extensions::run_tests::run_tests),
-        WorkflowFile::extension_shared(extensions::bump_version::bump_version),
     ];
 
     for workflow_file in workflows {

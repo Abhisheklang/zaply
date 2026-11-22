@@ -358,33 +358,9 @@ pub const GLOBAL_AGENTS_FILE_DISPLAY: &str =
 pub const GLOBAL_AGENTS_FILE_DISPLAY: &str =
     const_format::concatcp!("~/.config/", APP_NAME_LOWERCASE, "/AGENTS.md");
 
-/// Returns the path to the extensions directory.
-///
-/// This is where installed extensions are stored.
-pub fn extensions_dir() -> &'static PathBuf {
-    static EXTENSIONS_DIR: OnceLock<PathBuf> = OnceLock::new();
-    EXTENSIONS_DIR.get_or_init(|| data_dir().join("extensions"))
-}
-
-/// Returns the path to the extensions directory.
-///
-/// This is where installed extensions are stored on a remote.
-pub fn remote_extensions_dir() -> &'static PathBuf {
-    static EXTENSIONS_DIR: OnceLock<PathBuf> = OnceLock::new();
-    EXTENSIONS_DIR.get_or_init(|| data_dir().join("remote_extensions"))
-}
-
-/// Returns the path to the extensions directory.
-///
-/// This is where installed extensions are stored on a remote.
-pub fn remote_extensions_uploads_dir() -> &'static PathBuf {
-    static UPLOAD_DIR: OnceLock<PathBuf> = OnceLock::new();
-    UPLOAD_DIR.get_or_init(|| remote_extensions_dir().join("uploads"))
-}
-
 /// Returns the path to the themes directory.
 ///
-/// This is where themes that are not provided by extensions are stored.
+/// This is where user-provided themes are stored.
 pub fn themes_dir() -> &'static PathBuf {
     static THEMES_DIR: OnceLock<PathBuf> = OnceLock::new();
     THEMES_DIR.get_or_init(|| config_dir().join("themes"))

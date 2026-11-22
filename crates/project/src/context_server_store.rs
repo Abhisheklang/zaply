@@ -1,5 +1,3 @@
-pub mod extension;
-pub mod registry;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,7 +10,6 @@ use context_server::oauth::{self, McpOAuthTokenProvider, OAuthDiscovery, OAuthSe
 use context_server::transport::HttpTransport;
 use context_server::{ContextServer, ContextServerCommand, ContextServerId};
 use credentials_provider::CredentialsProvider;
-use futures::future::Either;
 use futures::{FutureExt as _, StreamExt as _, future::join_all};
 use gpui::{
     App, AsyncApp, Context, Entity, EventEmitter, Subscription, Task, TaskExt, WeakEntity, actions,
@@ -20,7 +17,6 @@ use gpui::{
 use http_client::HttpClient;
 use itertools::Itertools;
 use rand::Rng as _;
-use registry::ContextServerDescriptorRegistry;
 use remote::{RemoteClient, command::RemoteCommand};
 use rpc::{AnyProtoClient, TypedEnvelope, proto};
 use settings::{Settings as _, SettingsLocation, SettingsStore, WorktreeId};
@@ -35,10 +31,6 @@ use crate::{
 /// Maximum timeout for context server requests
 /// Prevents extremely large timeout values from tying up resources indefinitely.
 const MAX_TIMEOUT_SECS: u64 = 600; // 10 minutes
-
-pub fn init(cx: &mut App) {
-    extension::init(cx);
-}
 
 actions!(
     context_server,
@@ -164,11 +156,6 @@ pub enum ContextServerConfiguration {
         remote: bool,
         launcher: Option<RemoteStdioLauncher>,
     },
-    Extension {
-        command: ContextServerCommand,
-        settings: serde_json::Value,
-        remote: bool,
-    },
     Http {
         url: url::Url,
         headers: HashMap<String, String>,
@@ -187,7 +174,6 @@ impl ContextServerConfiguration {
     pub fn command(&self) -> Option<&ContextServerCommand> {
         match self {
             ContextServerConfiguration::Custom { command, .. } => Some(command),
-            ContextServerConfiguration::Extension { command, .. } => Some(command),
             ContextServerConfiguration::Http { .. } => None,
         }
     }
@@ -204,20 +190,15 @@ impl ContextServerConfiguration {
     pub fn remote(&self) -> bool {
         match self {
             ContextServerConfiguration::Custom { remote, .. } => *remote,
-            ContextServerConfiguration::Extension { remote, .. } => *remote,
             ContextServerConfiguration::Http { .. } => false,
         }
     }
 
     pub async fn from_settings(
         settings: ContextServerSettings,
-        id: ContextServerId,
-        registry: Entity<ContextServerDescriptorRegistry>,
-        worktree_store: Entity<WorktreeStore>,
+        _id: ContextServerId,
         cx: &AsyncApp,
     ) -> Option<Self> {
-        const EXTENSION_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
-
         match settings {
             ContextServerSettings::Stdio {
                 enabled: _,
@@ -228,37 +209,6 @@ impl ContextServerConfiguration {
                 remote,
                 launcher: None,
             }),
-            ContextServerSettings::Extension {
-                enabled: _,
-                settings,
-                remote,
-            } => {
-                let descriptor =
-                    cx.update(|cx| registry.read(cx).context_server_descriptor(&id.0))?;
-
-                let command_future = descriptor.command(worktree_store, cx);
-                let timeout_future = cx.background_executor().timer(EXTENSION_COMMAND_TIMEOUT);
-
-                match futures::future::select(command_future, timeout_future).await {
-                    Either::Left((Ok(command), _)) => Some(ContextServerConfiguration::Extension {
-                        command,
-                        settings,
-                        remote,
-                    }),
-                    Either::Left((Err(e), _)) => {
-                        log::error!(
-                            "Failed to create context server configuration from settings: {e:#}"
-                        );
-                        None
-                    }
-                    Either::Right(_) => {
-                        log::error!(
-                            "Timed out resolving command for extension context server {id}"
-                        );
-                        None
-                    }
-                }
-            }
             ContextServerSettings::Http {
                 enabled: _,
                 url,
@@ -305,7 +255,6 @@ pub struct ContextServerStore {
     server_ids: Vec<ContextServerId>,
     worktree_store: Entity<WorktreeStore>,
     project: Option<WeakEntity<Project>>,
-    registry: Entity<ContextServerDescriptorRegistry>,
     update_servers_task: Option<Task<Result<()>>>,
     context_server_factory: Option<ContextServerFactory>,
     /// The working directory each server was last started with. The working
@@ -337,7 +286,6 @@ impl ContextServerStore {
         Self::new_internal(
             !headless,
             None,
-            ContextServerDescriptorRegistry::default_global(cx),
             worktree_store,
             weak_project,
             ContextServerStoreState::Local {
@@ -358,7 +306,6 @@ impl ContextServerStore {
         Self::new_internal(
             true,
             None,
-            ContextServerDescriptorRegistry::default_global(cx),
             worktree_store,
             weak_project,
             ContextServerStoreState::Remote {
@@ -397,7 +344,6 @@ impl ContextServerStore {
 
     #[cfg(feature = "test-support")]
     pub fn test(
-        registry: Entity<ContextServerDescriptorRegistry>,
         worktree_store: Entity<WorktreeStore>,
         weak_project: Option<WeakEntity<Project>>,
         cx: &mut Context<Self>,
@@ -405,7 +351,6 @@ impl ContextServerStore {
         Self::new_internal(
             false,
             None,
-            registry,
             worktree_store,
             weak_project,
             ContextServerStoreState::Local {
@@ -419,7 +364,6 @@ impl ContextServerStore {
     #[cfg(feature = "test-support")]
     pub fn test_maintain_server_loop(
         context_server_factory: Option<ContextServerFactory>,
-        registry: Entity<ContextServerDescriptorRegistry>,
         worktree_store: Entity<WorktreeStore>,
         weak_project: Option<WeakEntity<Project>>,
         cx: &mut Context<Self>,
@@ -427,7 +371,6 @@ impl ContextServerStore {
         Self::new_internal(
             true,
             context_server_factory,
-            registry,
             worktree_store,
             weak_project,
             ContextServerStoreState::Local {
@@ -441,11 +384,6 @@ impl ContextServerStore {
     #[cfg(feature = "test-support")]
     pub fn set_context_server_factory(&mut self, factory: ContextServerFactory) {
         self.context_server_factory = Some(factory);
-    }
-
-    #[cfg(feature = "test-support")]
-    pub fn registry(&self) -> &Entity<ContextServerDescriptorRegistry> {
-        &self.registry
     }
 
     #[cfg(feature = "test-support")]
@@ -466,7 +404,6 @@ impl ContextServerStore {
     fn new_internal(
         maintain_server_loop: bool,
         context_server_factory: Option<ContextServerFactory>,
-        registry: Entity<ContextServerDescriptorRegistry>,
         worktree_store: Entity<WorktreeStore>,
         weak_project: Option<WeakEntity<Project>>,
         state: ContextServerStoreState,
@@ -500,11 +437,6 @@ impl ContextServerStore {
         })];
 
         if maintain_server_loop {
-            subscriptions.push(cx.observe(&registry, |this, _registry, cx| {
-                if !DisableAiSettings::get_global(cx).disable_ai {
-                    this.available_context_servers_changed(cx);
-                }
-            }));
             subscriptions.push(cx.subscribe(&worktree_store, |this, _store, event, cx| {
                 if matches!(
                     event,
@@ -526,7 +458,6 @@ impl ContextServerStore {
             context_server_settings: Self::resolve_all_context_server_settings(&worktree_store, cx),
             worktree_store,
             project: weak_project,
-            registry,
             needs_server_update: false,
             ai_disabled,
             servers: HashMap::default(),
@@ -573,38 +504,11 @@ impl ContextServerStore {
             .map(|entry| &entry.settings)
     }
 
-    /// Returns whether a server is provided by an extension (as opposed to a
-    /// custom Stdio/HTTP server configured directly in settings).
-    ///
-    /// This is derived from the configured settings rather than the runtime
-    /// configuration, so it stays correct even when a custom server is disabled
-    /// or has not been started yet (in which case it has no runtime state).
-    pub fn is_extension_provided(&self, id: &ContextServerId, cx: &App) -> bool {
-        match self.settings_for_server(id) {
-            Some(ContextServerSettings::Stdio { .. } | ContextServerSettings::Http { .. }) => false,
-            Some(ContextServerSettings::Extension { .. }) => true,
-            // No custom settings entry: the server can only originate from an
-            // extension descriptor in the registry.
-            None => self
-                .registry
-                .read(cx)
-                .context_server_descriptor(&id.0)
-                .is_some(),
-        }
-    }
-
     /// Returns whether a server is enabled.
-    /// Servers with no settings entry only originate from an extension
-    /// descriptor in the registry, and those are enabled by default
-    /// ([`ContextServerSettings::default_extension`]).
-    pub fn is_server_enabled(&self, id: &ContextServerId, cx: &App) -> bool {
+    pub fn is_server_enabled(&self, id: &ContextServerId, _cx: &App) -> bool {
         match self.settings_for_server(id) {
             Some(settings) => settings.enabled(),
-            None => self
-                .registry
-                .read(cx)
-                .context_server_descriptor(&id.0)
-                .is_some(),
+            None => false,
         }
     }
 
@@ -620,13 +524,6 @@ impl ContextServerStore {
             .servers
             .keys()
             .cloned()
-            .chain(
-                self.registry
-                    .read(cx)
-                    .context_server_descriptors()
-                    .into_iter()
-                    .map(|(id, _)| ContextServerId(id)),
-            )
             .chain(
                 self.context_server_settings
                     .keys()
@@ -677,14 +574,9 @@ impl ContextServerStore {
                 return anyhow::Ok(());
             }
 
-            let (registry, worktree_store) = this.update(cx, |this, _| {
-                (this.registry.clone(), this.worktree_store.clone())
-            });
             let configuration = ContextServerConfiguration::from_settings(
                 settings_entry.settings,
                 id.clone(),
-                registry,
-                worktree_store,
                 cx,
             )
             .await
@@ -935,8 +827,7 @@ impl ContextServerStore {
     ) -> Result<(Arc<ContextServer>, Arc<ContextServerConfiguration>)> {
         let remote = configuration.remote();
         let needs_remote_command = match configuration.as_ref() {
-            ContextServerConfiguration::Custom { .. }
-            | ContextServerConfiguration::Extension { .. } => remote,
+            ContextServerConfiguration::Custom { .. } => remote,
             ContextServerConfiguration::Http { .. } => false,
         };
 
@@ -1112,8 +1003,8 @@ impl ContextServerStore {
     ) -> Result<proto::ContextServerCommand> {
         let server_id = ContextServerId(envelope.payload.server_id.into());
 
-        let (settings_entry, registry, worktree_store) =
-            this.update(&mut cx, |this, inner_cx| {
+        let settings_entry =
+            this.update(&mut cx, |this, _inner_cx| {
                 let ContextServerStoreState::Local {
                     is_headless: true, ..
                 } = &this.state
@@ -1127,25 +1018,14 @@ impl ContextServerStore {
                     .context_server_settings
                     .get(&server_id.0)
                     .cloned()
-                    .or_else(|| {
-                        this.registry
-                            .read(inner_cx)
-                            .context_server_descriptor(&server_id.0)
-                            .map(|_| ContextServerSettingsEntry {
-                                worktree_id: None,
-                                settings: ContextServerSettings::default_extension(),
-                            })
-                    })
                     .with_context(|| format!("context server `{}` not found", server_id))?;
 
-                anyhow::Ok((settings, this.registry.clone(), this.worktree_store.clone()))
+                anyhow::Ok(settings)
             })?;
 
         let configuration = ContextServerConfiguration::from_settings(
             settings_entry.settings,
             server_id.clone(),
-            registry,
-            worktree_store,
             &cx,
         )
         .await
@@ -1793,22 +1673,7 @@ impl ContextServerStore {
             return Ok(());
         }
 
-        let (mut configured_servers, registry, worktree_store) = this.update(cx, |this, _| {
-            (
-                this.context_server_settings.clone(),
-                this.registry.clone(),
-                this.worktree_store.clone(),
-            )
-        })?;
-
-        for (id, _) in registry.read_with(cx, |registry, _| registry.context_server_descriptors()) {
-            configured_servers
-                .entry(id)
-                .or_insert(ContextServerSettingsEntry {
-                    worktree_id: None,
-                    settings: ContextServerSettings::default_extension(),
-                });
-        }
+        let configured_servers = this.update(cx, |this, _| this.context_server_settings.clone())?;
 
         let (enabled_servers, disabled_servers): (HashMap<_, _>, HashMap<_, _>) =
             configured_servers
@@ -1821,8 +1686,6 @@ impl ContextServerStore {
                 ContextServerConfiguration::from_settings(
                     settings_entry.settings,
                     id.clone(),
-                    registry.clone(),
-                    worktree_store.clone(),
                     cx,
                 )
                 .map(move |config| (id, config))

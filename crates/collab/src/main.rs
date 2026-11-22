@@ -9,7 +9,7 @@ use axum::{
 
 use collab::api::CloudflareIpCountryHeader;
 use collab::{
-    AppState, Config, Result, api::fetch_extensions_from_blob_store_periodically, db, env,
+    AppState, Config, Result, db, env,
     executor::Executor,
 };
 use collab::{REVISION, ServiceMode, VERSION};
@@ -86,11 +86,7 @@ async fn main() -> Result<()> {
                 }
 
                 if mode.is_api() {
-                    fetch_extensions_from_blob_store_periodically(state.clone());
-
-                    app = app
-                        .merge(collab::api::events::router())
-                        .merge(collab::api::extensions::router())
+                    app = app.merge(collab::api::events::router())
                 }
 
                 app = app.layer(Extension(state.clone()));

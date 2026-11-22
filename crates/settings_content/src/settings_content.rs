@@ -1,7 +1,6 @@
 mod action;
 mod agent;
 mod editor;
-mod extension;
 mod fallible_options;
 mod language;
 mod language_model;
@@ -17,7 +16,6 @@ pub use action::{ActionName, ActionWithArguments, CommandAliasTarget};
 pub use agent::*;
 use anyhow::Context;
 pub use editor::*;
-pub use extension::*;
 pub use fallible_options::*;
 pub use language::*;
 pub use language_model::*;
@@ -177,9 +175,6 @@ pub struct SettingsContent {
 
     #[serde(flatten)]
     pub theme: Box<ThemeSettingsContent>,
-
-    #[serde(flatten)]
-    pub extension: ExtensionSettingsContent,
 
     #[serde(flatten)]
     pub workspace: WorkspaceSettingsContent,
@@ -404,7 +399,7 @@ impl SettingsContent {
 }
 
 fallible_options::flattened_deserialize!(SettingsContent {
-    sections: { project, theme, extension, workspace, editor, remote },
+    sections: { project, theme, workspace, editor, remote },
     options: {
         call_hierarchy, command_palette, file_finder, git_panel, git_graph, tabs, tab_bar, tab_switcher, status_bar, preview_tabs, agent,
         agent_servers, audio, auto_update, base_keymap, collaboration_panel, debugger, diagnostics,
@@ -1446,7 +1441,6 @@ pub struct DevContainerConnection {
     pub remote_user: String,
     pub container_id: String,
     pub use_podman: bool,
-    pub extension_ids: Vec<String>,
     pub remote_env: BTreeMap<String, String>,
 }
 
@@ -1561,7 +1555,7 @@ pub struct WhichKeySettingsContent {
 // to allow new values to be added.
 //
 // Consider using a HashMap<String, bool> instead of this type
-// (like auto_install_extensions) so that user settings files can both add
+// so that user settings files can both add
 // and remove values from the set.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ExtendingVec<T>(pub Vec<T>);

@@ -1,4 +1,3 @@
-mod extension;
 pub mod internal_api;
 mod known_or_unknown;
 mod plan;
@@ -12,7 +11,6 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-pub use crate::extension::*;
 pub use crate::known_or_unknown::*;
 pub use crate::plan::*;
 pub use crate::timestamp::Timestamp;

@@ -137,7 +137,7 @@ The editor binary is produced at `target/release/zaply`.
 
 Honesty matters more than a long feature list:
 
-- Browsing and one-click installing from the hosted extension gallery is not wired up yet. Extensions you have on disk, including dev extensions, work as usual.
+- Zaply has no extension store and does not load third-party extensions. Language support is built in instead: the grammars and language configuration for the bundled language set (including HTML, Java, GLSL, and Proto) are compiled into the app and work fully offline, with no install step.
 - Updates are manual: download the newest build from the releases page. Zaply never checks a vendor server in the background.
 - The server component for SSH remote development is not bundled yet.
 - Hosted collaboration features were removed along with the account system they required.

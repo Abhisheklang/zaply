@@ -48,7 +48,6 @@ context_server.workspace = true
 credentials_provider.workspace = true
 dap.workspace = true
 encoding_rs.workspace = true
-extension.workspace = true
 fancy-regex.workspace = true
 file_content.workspace = true
 fs.workspace = true

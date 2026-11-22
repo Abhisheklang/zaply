@@ -133,10 +133,7 @@ pub(crate) struct ZaplyCustomizationsWrapper {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Default)]
-pub(crate) struct ZaplyCustomization {
-    #[serde(default)]
-    pub(crate) extensions: Vec<String>,
-}
+pub(crate) struct ZaplyCustomization {}
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]

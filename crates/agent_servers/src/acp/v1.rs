@@ -9988,10 +9988,6 @@ fn mcp_servers_for_project(project: &Entity<Project>, cx: &App) -> Vec<acp::McpS
         .map(|(name, configuration)| match &*configuration {
             project::context_server_store::ContextServerConfiguration::Custom {
                 command, ..
-            }
-            | project::context_server_store::ContextServerConfiguration::Extension {
-                command,
-                ..
             } => acp::McpServer::Stdio(
                 acp::McpServerStdio::new(name, &command.path)
                     .args(command.args.clone())

@@ -1026,7 +1026,6 @@ RUN sed -i -E 's/((^|\s)PATH=)([^\$]*)$/\1\${{PATH:-\3}}/g' /etc/profile || true
             container_id: running_container.id,
             remote_user,
             remote_workspace_folder: remote_workspace_folder.display().to_string(),
-            extension_ids: self.extension_ids(),
             remote_env,
         })
     }
@@ -2294,13 +2293,6 @@ RUN sed -i -E 's/((^|\s)PATH=)([^\$]*)$/\1\${PATH:-\3}/g' /etc/profile || true
         Ok(command)
     }
 
-    fn extension_ids(&self) -> Vec<String> {
-        self.dev_container()
-            .customizations
-            .as_ref()
-            .map(|c| c.zaply.extensions.clone())
-            .unwrap_or_default()
-    }
 
     async fn build_and_run(&mut self) -> Result<DevContainerUp, DevContainerError> {
         self.dev_container().validate_devcontainer_contents()?;

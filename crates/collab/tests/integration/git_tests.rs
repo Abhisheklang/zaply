@@ -32,7 +32,6 @@ use util::{path, rel_path::rel_path};
 use workspace::{MultiWorkspace, Workspace};
 
 use crate::TestServer;
-use extension::ExtensionHostProxy;
 use fs::FakeFs;
 use http_client::BlockedHttpClient;
 use language::LanguageRegistry;
@@ -1745,7 +1744,6 @@ async fn test_ssh_branch_switch_does_not_fetch_history(
                 http_client: Arc::new(BlockedHttpClient),
                 node_runtime: NodeRuntime::unavailable(),
                 languages,
-                extension_host_proxy: Arc::new(ExtensionHostProxy::new()),
                 startup_time: std::time::Instant::now(),
             },
             false,

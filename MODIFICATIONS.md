@@ -72,35 +72,41 @@ All changes are dated 2026-11-21 and are summarised here:
   token usage reported by providers is accumulated locally per
   provider, model, and day (agent crate) and shown by an Open API Usage
   action. The counts never leave the device.
-- Extension packs: four curated pack manifests under extension-packs/,
-  a script/install-extension-pack downloader, and EXTENSION_PACKS.md
-  explaining the dev-extension mechanism and its limits.
 - Collaboration: the collaboration panel no longer offers sign-in to a
   hosted service that does not exist; it explains self-hosting instead.
   The collab server gained a CI workflow that builds it and verifies
   its health check against PostgreSQL, and COLLABORATION.md documents
   running it and pointing the editor at it via the server_url setting.
-- Extension API and themes: EXTENSION_API.md documents the extension
-  API surface (version 0.8.0, WIT worlds, the Extension trait). A
-  Create Custom Theme action starts a user theme from the bundled One
-  family in the themes directory, which is watched for live preview.
+- Themes: a Create Custom Theme action starts a user theme from the
+  bundled One family in the themes directory, which is watched for live
+  preview.
 - Performance: the default file scan exclusions now cover dependency
   and build-output folders; script/zaply-benchmarks measures startup,
   large-file open, and project search; BENCHMARKS.md records the
   measured results; Enable Low-End Hardware Mode and Enable Large
   Monorepo Mode actions apply named settings profiles.
-- Extension store (2026-11-22): the store now browses and installs extensions from
-  Zed's public extension API, used as-is at the owner's direction, and
-  the Extensions view carries a "Powered by Zed" label. The store is
-  the only feature that talks to that service; it uses a dedicated API
-  base that is independent of the configured server URL, and no other
-  hosted feature (accounts, collaboration, cloud models, edit
-  predictions, telemetry) was restored.
+- Extension system removed (2026-11-22): Zaply briefly shipped a store
+  client pointed at Zed's public extension API (with a "Powered by Zed"
+  label in the Extensions view) earlier on 2026-11-22. Testing then
+  proved that code-bearing store extensions could not load at all,
+  because the v1.0 rename changed the extension ABI identifiers the
+  store packages carry. Rather than ship a half-working store, the
+  whole extension system was removed the same day: the store client
+  and its API base, the Extensions UI and every entry point to it, the
+  wasm extension host, dev-extension installs, extension packs, the
+  extension API surface, and the collab server's extension catalog
+  endpoints. No extension-related network code remains. The language
+  data of the bundled first-party set (HTML, GLSL, Proto, and the Java
+  family: Java, Gradle, Gradle KTS, and Properties) was converted to
+  compiled-in built-in language support before the removal, so every
+  language that worked before still works, offline, with no install
+  step. Their extension language servers were already non-functional
+  via the ABI break, so no working capability was lost.
 
 ## Changed files
 
 The rebrand and the total rename touched files across the entire tree:
-crates, assets, extensions, script, tooling, and configuration files.
+crates, assets, script, tooling, and configuration files.
 Rather than listing thousands of paths, the categories of change are
 recorded in the summary above. This notice and the repository itself
 record the modification and its date, as the GPL requires.

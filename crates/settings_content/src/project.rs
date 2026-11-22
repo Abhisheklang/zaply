@@ -536,24 +536,6 @@ pub enum ContextServerSettingsContent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         oauth: Option<OAuthClientSettings>,
     },
-    Extension {
-        /// Whether the context server is enabled.
-        #[serde(default = "default_true")]
-        enabled: bool,
-        /// Whether to run the context server on the remote server when using remote development.
-        ///
-        /// If this is false, the context server will always run on the local machine.
-        ///
-        /// Default: false
-        #[serde(default)]
-        remote: bool,
-        /// The settings for this context server specified by the extension.
-        ///
-        /// Consult the documentation for the context server to see what settings
-        /// are supported.
-        #[serde(default)]
-        settings: serde_json::Value,
-    },
 }
 
 impl ContextServerSettingsContent {
@@ -565,10 +547,6 @@ impl ContextServerSettingsContent {
             } => {
                 *custom_enabled = enabled;
             }
-            ContextServerSettingsContent::Extension {
-                enabled: ext_enabled,
-                ..
-            } => *ext_enabled = enabled,
             ContextServerSettingsContent::Http {
                 enabled: remote_enabled,
                 ..

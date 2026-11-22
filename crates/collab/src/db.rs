@@ -4,7 +4,6 @@ mod tables;
 
 use crate::{Error, Result};
 use anyhow::{Context as _, anyhow};
-use cloud_api_types::{ExtensionMetadata, ExtensionProvides};
 use collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use dashmap::DashMap;
 use futures::StreamExt;
@@ -643,23 +642,6 @@ pub struct WorktreeSettingsFile {
     pub content: String,
     pub kind: LocalSettingsKind,
     pub outside_worktree: bool,
-}
-
-pub struct NewExtensionVersion {
-    pub name: String,
-    pub version: semver::Version,
-    pub description: String,
-    pub authors: Vec<String>,
-    pub repository: String,
-    pub schema_version: i32,
-    pub wasm_api_version: Option<String>,
-    pub provides: BTreeSet<ExtensionProvides>,
-    pub published_at: PrimitiveDateTime,
-}
-
-pub struct ExtensionVersionConstraints {
-    pub schema_versions: RangeInclusive<i32>,
-    pub wasm_api_versions: RangeInclusive<semver::Version>,
 }
 
 impl LocalSettingsKind {

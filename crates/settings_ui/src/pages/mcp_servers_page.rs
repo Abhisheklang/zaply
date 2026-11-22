@@ -3,7 +3,6 @@ use std::sync::Arc;
 use collections::HashMap;
 use context_server::ContextServerId;
 use editor::Editor;
-use extension_host::ExtensionStore;
 use gpui::{Action as _, Entity, Focusable as _, ScrollHandle, WeakEntity, prelude::*};
 use project::context_server_store::{
     ContextServerConfiguration, ContextServerStatus, ContextServerStore,
@@ -16,7 +15,6 @@ use ui::{
 };
 use util::ResultExt as _;
 
-use zaply_actions::ExtensionCategoryFilter;
 
 use crate::{PROJECT, SettingField, SettingItem, SettingsPageItem, SettingsWindow, USER};
 
@@ -56,7 +54,7 @@ pub(crate) fn render_mcp_servers_page(
                 .gap_2()
                 .child(
                     v_flex().child(Label::new("Configured Servers")).child(
-                        Label::new("Manage servers connected directly or via extensions.")
+                        Label::new("Manage servers connected directly.")
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -167,22 +165,9 @@ fn render_context_server(
     );
     let item_id = SharedString::from(context_server_id.0.to_string());
 
-    // Determine the source from the configured settings rather than the runtime
-    // configuration: a custom (Stdio/HTTP) server that is disabled or not yet
-    // started has no runtime configuration, and must not be mistaken for an
-    // extension-provided server.
-    let provided_by_extension = store.read(cx).is_extension_provided(context_server_id, cx);
-    let display_name = if provided_by_extension {
-        resolve_extension_display_name(context_server_id, cx).unwrap_or_else(|| item_id.clone())
-    } else {
-        item_id.clone()
-    };
+    let display_name = item_id.clone();
 
-    let source = if provided_by_extension {
-        AiSettingItemSource::Extension
-    } else {
-        AiSettingItemSource::Custom
-    };
+    let source = AiSettingItemSource::Custom;
 
     let status = map_server_status(&server_status);
 
@@ -209,14 +194,12 @@ fn render_context_server(
         .read(cx)
         .settings_for_server(context_server_id)
         .cloned();
-    let configure_button = (!provided_by_extension).then(|| {
-        render_configure_button(
-            context_server_id,
-            cx.entity().downgrade(),
-            server_settings.clone(),
-        )
-    });
-    let uninstall_button = render_uninstall_button(context_server_id, provided_by_extension);
+    let configure_button = Some(render_configure_button(
+        context_server_id,
+        cx.entity().downgrade(),
+        server_settings.clone(),
+    ));
+    let uninstall_button = render_uninstall_button(context_server_id);
 
     // Build toggle switch
     let toggle_switch =
@@ -251,23 +234,6 @@ fn map_server_status(status: &ContextServerStatus) -> AiSettingItemStatus {
     }
 }
 
-fn resolve_extension_display_name(id: &ContextServerId, cx: &App) -> Option<SharedString> {
-    ExtensionStore::global(cx)
-        .read(cx)
-        .installed_extensions()
-        .iter()
-        .find(|(_, entry)| entry.manifest.context_servers.contains_key(&id.0))
-        .map(|(_, entry)| {
-            let name = entry.manifest.name.as_str();
-            let stripped = name
-                .strip_suffix(" MCP Server")
-                .or_else(|| name.strip_suffix(" MCP"))
-                .or_else(|| name.strip_suffix(" Context Server"))
-                .unwrap_or(name);
-            SharedString::from(stripped.to_string())
-        })
-}
-
 fn render_configure_button(
     context_server_id: &ContextServerId,
     settings_window: WeakEntity<SettingsWindow>,
@@ -298,10 +264,7 @@ fn render_configure_button(
     })
 }
 
-fn render_uninstall_button(
-    context_server_id: &ContextServerId,
-    provided_by_extension: bool,
-) -> impl IntoElement {
+fn render_uninstall_button(context_server_id: &ContextServerId) -> impl IntoElement {
     let context_server_id = context_server_id.clone();
 
     IconButton::new(
@@ -312,7 +275,7 @@ fn render_uninstall_button(
     .tab_index(0isize)
     .tooltip(Tooltip::text("Uninstall MCP Server"))
     .on_click(move |_event, _window, cx| {
-        uninstall_server(&context_server_id, provided_by_extension, cx);
+        uninstall_server(&context_server_id, cx);
     })
 }
 
@@ -358,16 +321,13 @@ fn render_toggle_switch(
             settings::update_settings_file(fs, cx, {
                 let context_server_id = context_server_id.clone();
                 move |settings, _| {
-                    settings
+                    if let Some(entry) = settings
                         .project
                         .context_servers
-                        .entry(context_server_id.0.clone())
-                        .or_insert_with(|| ContextServerSettingsContent::Extension {
-                            enabled: is_enabled,
-                            remote: false,
-                            settings: serde_json::json!({}),
-                        })
-                        .set_enabled(is_enabled);
+                        .get_mut(&context_server_id.0)
+                    {
+                        entry.set_enabled(is_enabled);
+                    }
                 }
             });
         }
@@ -591,29 +551,6 @@ pub(crate) fn render_add_server_popover(
                                 .log_err();
                         }
                     })
-                    .separator()
-                    .entry("Install from Extensions", None, {
-                        move |_window, cx| {
-                            if let Some(original_window) = original_window.as_ref() {
-                                cx.activate(true);
-                                original_window
-                                    .update(cx, |_, window, cx| {
-                                        window.activate_window();
-                                        window.dispatch_action(
-                                            zaply_actions::Extensions {
-                                                category_filter: Some(
-                                                    ExtensionCategoryFilter::ContextServers,
-                                                ),
-                                                id: None,
-                                            }
-                                            .boxed_clone(),
-                                            cx,
-                                        );
-                                    })
-                                    .log_err();
-                            }
-                        }
-                    })
                 }))
             }
         });
@@ -625,23 +562,7 @@ pub(crate) fn render_add_server_popover(
         .child(popover)
 }
 
-fn uninstall_server(
-    context_server_id: &ContextServerId,
-    provided_by_extension: bool,
-    cx: &mut App,
-) {
-    if provided_by_extension {
-        if let Some((ext_id, manifest)) =
-            resolve_extension_for_context_server(context_server_id, cx)
-        {
-            if extension_only_provides_context_server(&manifest) {
-                ExtensionStore::global(cx)
-                    .update(cx, |store, cx| store.uninstall_extension(ext_id, cx))
-                    .detach_and_log_err(cx);
-            }
-        }
-    }
-
+fn uninstall_server(context_server_id: &ContextServerId, cx: &mut App) {
     let fs = <dyn fs::Fs>::global(cx);
     let context_server_id = context_server_id.clone();
     settings::update_settings_file(fs, cx, move |settings, _| {
@@ -650,30 +571,6 @@ fn uninstall_server(
             .context_servers
             .remove(&context_server_id.0);
     });
-}
-
-fn resolve_extension_for_context_server(
-    id: &ContextServerId,
-    cx: &App,
-) -> Option<(Arc<str>, Arc<extension::ExtensionManifest>)> {
-    ExtensionStore::global(cx)
-        .read(cx)
-        .installed_extensions()
-        .iter()
-        .find(|(_, entry)| entry.manifest.context_servers.contains_key(&id.0))
-        .map(|(id, entry)| (id.clone(), entry.manifest.clone()))
-}
-
-fn extension_only_provides_context_server(manifest: &extension::ExtensionManifest) -> bool {
-    manifest.context_servers.len() == 1
-        && manifest.themes.is_empty()
-        && manifest.icon_themes.is_empty()
-        && manifest.languages.is_empty()
-        && manifest.grammars.is_empty()
-        && manifest.language_servers.is_empty()
-        && manifest.slash_commands.is_empty()
-        && manifest.snippets.is_none()
-        && manifest.debug_locators.is_empty()
 }
 
 // === Custom (Stdio/HTTP) MCP server add/edit form ===
@@ -786,7 +683,6 @@ impl McpServerForm {
                     }
                     oauth_initial = oauth.as_ref().map(|oauth| oauth.client_id.clone());
                 }
-                ContextServerSettings::Extension { .. } => {}
             }
         }
 
