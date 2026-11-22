@@ -29,10 +29,7 @@
 (enum_field
   (identifier) @constant)
 
-[
-  (string)
-  "\"proto3\""
-] @string
+(string) @string
 
 (int_lit) @number
 

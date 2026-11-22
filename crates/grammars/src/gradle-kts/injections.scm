@@ -1,5 +1,5 @@
 ([
   (line_comment)
-  (multiline_comment)
+  (block_comment)
 ] @content
   (#set! "language" "comment"))

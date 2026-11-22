@@ -1,274 +1,334 @@
-[
-  "!in"
-  "!instanceof"
-  "as"
-  "assert"
-  "case"
-  "catch"
-  "class"
-  "def"
-  "default"
-  "else"
-  "extends"
-  "finally"
-  "for"
-  "if"
-  "import"
-  "in"
-  "instanceof"
-  "package"
-  "pipeline"
-  "return"
-  "switch"
-  "try"
-  "while"
-  (break)
-  (continue)
-] @keyword
-
-[
-  "true"
-  "false"
-] @boolean
-
-(null) @constant
-
-"this" @variable.builtin
-
-[
-  "int"
-  "char"
-  "short"
-  "long"
-  "boolean"
-  "float"
-  "double"
-  "void"
-] @type.builtin
-
-[
-  "final"
-  "private"
-  "protected"
-  "public"
-  "static"
-  "synchronized"
-] @type.qualifier
-
-(comment) @comment
-
-(shebang) @comment
-
-(string) @string
-
-(string
-  (escape_sequence) @operator)
-
-(string
-  (interpolation
-    "$" @operator))
-
-"(" @punctuation.bracket
-
-")" @punctuation.bracket
-
-"[" @punctuation.bracket
-
-"]" @punctuation.bracket
-
-"{" @punctuation.bracket
-
-"}" @punctuation.bracket
-
-":" @punctuation.delimiter
-
-"," @punctuation.delimiter
-
-"." @punctuation.delimiter
-
-(number_literal) @number
-
+; Adapted from the built-in Java highlights: the pinned tree-sitter-groovy
+; grammar is a Java-family grammar, extended below with the Groovy/Gradle
+; constructs it adds (DSL calls, closures, `def`, map literals).
+; Variables
 (identifier) @variable
 
-((identifier) @variable.parameter
-  (#is? @variable.parameter "local.parameter"))
+; Methods
+(method_declaration
+  name: (identifier) @function)
 
-; An identifier on the left of an assignment (e.g. `group = '…'`, `version = '…'`
-; in a build script) is a property reference, not a parameter. Re-capture it as
-; `@variable` after the `@variable.parameter` rule above so it wins last-match.
-(assignment
-  .
+(method_invocation
+  name: (identifier) @function)
+
+; Gradle DSL calls without parentheses, e.g. `dependencies { ... }`
+(juxt_function_call
+  name: (identifier) @function)
+
+(function_definition
+  name: (identifier) @function)
+
+(super) @function
+
+; Parameters
+(formal_parameter
+  name: (identifier) @variable)
+
+(catch_formal_parameter
+  name: (identifier) @variable)
+
+(spread_parameter
+  (variable_declarator
+    name: (identifier) @variable))
+
+; Lambda / closure parameters
+(inferred_parameters
   (identifier) @variable)
 
-; Members of a dotted access (e.g. `tasks` in `tasks.named(…)`, the receiver
-; segments of `project.ext.foo`) are object/property references, not parameters.
-; Re-capture as `@variable` after the parameter rule; the `function_call` rules
-; below still override the trailing method segment to `@function`.
-(dotted_identifier
-  (identifier) @variable)
+(lambda_expression
+  parameters: (identifier) @variable)
 
-((identifier) @constant
-  (#match? @constant "^[A-Z][A-Z_]+"))
-
+; Operators
 [
-  "%"
-  "*"
-  "/"
   "+"
+  ":"
+  "++"
   "-"
-  "<<"
-  ">>"
-  ">>>"
-  ".."
-  "..<"
-  "<..<"
-  "<.."
+  "--"
+  "&"
+  "&&"
+  "|"
+  "||"
+  "!"
+  "!="
+  "=="
+  "*"
+  "**"
+  "/"
+  "%"
   "<"
   "<="
   ">"
   ">="
-  "=="
-  "!="
-  "<=>"
-  "==="
-  "!=="
-  "=~"
-  "==~"
-  "&"
+  "="
+  "-="
+  "+="
+  "*="
+  "/="
+  "%="
+  "->"
+  ".."
   "^"
-  "|"
-  "&&"
-  "||"
-  "?:"
-  "+"
-  "*"
-  ".&"
-  ".@"
-  "?."
-  "*."
-  "*"
-  "*:"
-  "++"
-  "--"
-  "!"
+  "^="
+  "&="
+  "|="
+  "~"
+  ">>"
+  ">>>"
+  "<<"
+  "::"
 ] @operator
 
-(string
-  "/" @string)
-
-(ternary_op
-  ([
-    "?"
-    ":"
-  ]) @operator)
-
-(map
-  (map_item
-    key: (identifier) @variable.parameter))
-
-(parameter
-  type: (identifier) @type
-  name: (identifier) @variable.parameter)
-
-(generic_param
-  name: (identifier) @variable.parameter)
-
-(declaration
-  type: (identifier) @type)
-
-(function_definition
-  type: (identifier) @type)
-
-(function_declaration
-  type: (identifier) @type)
-
-(class_definition
+; Types
+(interface_declaration
   name: (identifier) @type)
 
-(class_definition
-  superclass: (identifier) @type)
+(annotation_type_declaration
+  name: (identifier) @attribute)
 
-(generic_param
-  superclass: (identifier) @type)
+(class_declaration
+  name: (identifier) @type)
 
-(type_with_generics
+(record_declaration
+  name: (identifier) @type)
+
+(enum_declaration
+  name: (identifier) @enum)
+
+(enum_constant
+  name: (identifier) @constant)
+
+(constructor_declaration
+  name: (identifier) @constructor)
+
+(type_identifier) @type
+
+((type_identifier) @type
+  (#eq? @type "var"))
+
+(object_creation_expression
+  type: (type_identifier) @constructor)
+
+((method_invocation
+  object: (identifier) @type)
+  (#match? @type "^[A-Z]"))
+
+((method_reference
+  .
   (identifier) @type)
+  (#match? @type "^[A-Z]"))
 
-(type_with_generics
-  (generics
-    (identifier) @type))
+((field_access
+  object: (identifier) @type)
+  (#match? @type "^[A-Z]"))
 
-(generics
-  [
-    "<"
-    ">"
-  ] @punctuation.bracket)
+(scoped_identifier
+  (identifier) @type
+  (#match? @type "^[A-Z]"))
 
-(generic_parameters
-  [
-    "<"
-    ">"
-  ] @punctuation.bracket)
+; Fields
+(field_declaration
+  declarator: (variable_declarator
+    name: (identifier) @property))
 
-; TODO: Class literals with PascalCase
-(declaration
-  "=" @operator)
+(field_access
+  field: (identifier) @property)
 
-(assignment
-  "=" @operator)
+; Map entries, e.g. `key: value` in a Gradle map literal
+(map_item
+  key: (_) @property)
 
-(function_call
-  function: (identifier) @function)
+[
+  (boolean_type)
+  (integral_type)
+  (floating_point_type)
+  (void_type)
+] @type
 
-(function_call
-  function: (dotted_identifier
-    (identifier) @function .))
+; Variables
+((identifier) @constant
+  (#match? @constant "^[A-Z_$][A-Z\\d_$]*$"))
 
-(function_call
-  (argument_list
-    (map_item
-      key: (identifier) @variable.parameter)))
+(this) @variable
 
-(juxt_function_call
-  function: (identifier) @function)
-
-(juxt_function_call
-  function: (dotted_identifier
-    (identifier) @function .))
-
-(juxt_function_call
-  (argument_list
-    (map_item
-      key: (identifier) @variable.parameter)))
-
-(function_definition
-  function: (identifier) @function)
-
-(function_declaration
-  function: (identifier) @function)
-
-(annotation) @function.macro
-
+; Annotations
 (annotation
-  (identifier) @function.macro)
+  "@" @punctuation.special
+  name: (identifier) @attribute)
 
-"@interface" @function.macro
+(marker_annotation
+  "@" @punctuation.special
+  name: (identifier) @attribute)
 
-"pipeline" @keyword
+; Literals
+(string_literal) @string
 
-(groovy_doc) @comment.documentation
+(escape_sequence) @string.escape
 
-(groovy_doc
+(character_literal) @string
+
+[
+  (hex_integer_literal)
+  (decimal_integer_literal)
+  (octal_integer_literal)
+  (binary_integer_literal)
+  (decimal_floating_point_literal)
+  (hex_floating_point_literal)
+] @number
+
+[
+  (true)
+  (false)
+] @boolean
+
+(null_literal) @constant.builtin
+
+; Keywords
+[
+  "assert"
+  "class"
+  "record"
+  "default"
+  "enum"
+  "extends"
+  "implements"
+  "instanceof"
+  "interface"
+  "@interface"
+  "permits"
+  "to"
+  "with"
+  "new"
+] @keyword
+
+[
+  "abstract"
+  "final"
+  "native"
+  "non-sealed"
+  "open"
+  "private"
+  "protected"
+  "public"
+  "sealed"
+  "static"
+  "strictfp"
+  "synchronized"
+  "transitive"
+] @keyword
+
+[
+  "transient"
+  "volatile"
+] @keyword
+
+; Groovy-specific keywords
+[
+  "def"
+  "as"
+  "in"
+] @keyword
+
+[
+  "return"
+  "yield"
+] @keyword
+
+; Conditionals
+[
+  "if"
+  "else"
+  "switch"
+  "case"
+  "when"
+] @keyword
+
+(ternary_expression
   [
-    (groovy_doc_param)
-    (groovy_doc_throws)
-    (groovy_doc_tag)
-  ] @string.special)
+    "?"
+    ":"
+  ] @operator)
 
-(groovy_doc
-  (groovy_doc_param
-    (identifier) @variable.parameter))
+; Loops
+[
+  "for"
+  "while"
+  "do"
+  "continue"
+  "break"
+] @keyword
 
-(groovy_doc
-  (groovy_doc_throws
-    (identifier) @type))
+; Includes
+[
+  "exports"
+  "import"
+  "module"
+  "opens"
+  "package"
+  "provides"
+  "requires"
+  "uses"
+] @keyword
+
+; Punctuation
+[
+  ";"
+  "."
+  "..."
+  ","
+] @punctuation.delimiter
+
+[
+  "{"
+  "}"
+] @punctuation.bracket
+
+[
+  "["
+  "]"
+] @punctuation.bracket
+
+[
+  "("
+  ")"
+] @punctuation.bracket
+
+(type_arguments
+  [
+    "<"
+    ">"
+  ] @punctuation.bracket)
+
+(type_parameters
+  [
+    "<"
+    ">"
+  ] @punctuation.bracket)
+
+(string_interpolation
+  [
+    "\\{"
+    "}"
+  ] @punctuation.special) @embedded
+
+; Exceptions
+[
+  "throw"
+  "throws"
+  "finally"
+  "try"
+  "catch"
+] @keyword
+
+; Labels
+(labeled_statement
+  (identifier) @label)
+
+; Comments
+[
+  (line_comment)
+  (block_comment)
+] @comment
+
+((block_comment) @comment.doc
+  (#match? @comment.doc "^\\/\\*\\*"))
