@@ -1,4 +1,5 @@
-# Builds Zaply for macOS and packages it as a DMG using script/bundle-mac.
+# Builds Zaply for macOS on both architectures and combines the two app
+# bundles into a single universal DMG using script/bundle-mac and lipo.
 # Runs on standard GitHub-hosted runners only.
 #
 # The deployment target is macOS 12.0 (set by script/bundle-mac), so the
@@ -7,8 +8,8 @@
 # the first launch. Signing and notarization can be enabled later by
 # providing the usual certificates and keys as repository secrets.
 #
-# - On a version tag (v*): the DMGs are attached to the GitHub release.
-# - Otherwise: the DMGs are kept as a short-retention workflow artifact.
+# - On a version tag (v*): the universal DMG is attached to the GitHub release.
+# - Otherwise: the universal DMG is kept as a short-retention workflow artifact.
 name: Build Zaply for macOS
 
 on:
@@ -30,7 +31,7 @@ env:
 
 jobs:
   build-macos:
-    name: Build and package Zaply for macOS (${{ matrix.target }})
+    name: Build Zaply for macOS (${{ matrix.target }})
     # script/bundle-mac requires the macOS 26 SDK, which is what the
     # macos-26 runner image provides.
     runs-on: macos-26
@@ -83,22 +84,180 @@ jobs:
           fi
           pkill -f "Zaply.app/Contents/MacOS" || true
 
-      - name: Upload the DMG as a workflow artifact (manual and branch runs)
+      # The per-architecture DMGs from script/bundle-mac are no longer
+      # published. The app bundles are handed to the package-universal job,
+      # which combines them into the single universal DMG that ships.
+      # A tarball is used because it preserves permissions and symlinks
+      # inside the .app exactly.
+      - name: Package the app bundle for the universal build
+        run: |
+          set -euo pipefail
+          tar -czf "zaply-app-${{ matrix.target }}.tar.gz" \
+            -C "target/${{ matrix.target }}/release/dmg" Zaply.app
+
+      - name: Upload the app bundle for the universal build
+        uses: actions/upload-artifact@v4
+        with:
+          name: zaply-app-${{ matrix.target }}
+          path: zaply-app-${{ matrix.target }}.tar.gz
+          retention-days: 3
+
+  package-universal:
+    name: Combine the macOS builds into a universal DMG
+    needs: build-macos
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Check out Zaply
+        uses: actions/checkout@v4
+
+      - name: Download the Apple silicon app bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: zaply-app-aarch64-apple-darwin
+          path: universal-inputs/aarch64
+
+      - name: Download the Intel app bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: zaply-app-x86_64-apple-darwin
+          path: universal-inputs/x86_64
+
+      # Every Mach-O file in the bundle is combined: the editor binary, the
+      # command-line tool, the bundled git helper, and anything else the
+      # bundler placed inside. The two bundles must contain the same files;
+      # if they ever diverge, this step fails instead of shipping a bundle
+      # that is universal only in part.
+      #
+      # Signing note: lipo invalidates the per-architecture signatures, so
+      # the combined bundle is re-signed below. The per-architecture bundles
+      # are ad-hoc signed in CI today (no Apple certificate is configured),
+      # so the universal bundle is ad-hoc signed the same way, with the same
+      # entitlements file script/bundle-mac placed inside the app. If real
+      # signing secrets are ever configured for the per-architecture builds,
+      # this step must re-sign with that identity instead of "-".
+      - name: Combine both architectures into one universal app bundle
+        run: |
+          set -euo pipefail
+          mkdir -p universal
+          tar -xzf universal-inputs/aarch64/zaply-app-aarch64-apple-darwin.tar.gz -C universal
+          mv universal/Zaply.app universal/Zaply-arm64.app
+          mkdir -p universal/x86
+          tar -xzf universal-inputs/x86_64/zaply-app-x86_64-apple-darwin.tar.gz -C universal/x86
+          cp -R universal/Zaply-arm64.app universal/Zaply.app
+
+          (cd universal/Zaply-arm64.app && find . \( -type f -o -type l \) | sort) > universal/files-arm64.txt
+          (cd universal/x86/Zaply.app && find . \( -type f -o -type l \) | sort) > universal/files-x86.txt
+          if ! diff universal/files-arm64.txt universal/files-x86.txt; then
+            echo "The two app bundles do not contain the same files; refusing to build a partial universal bundle." >&2
+            exit 1
+          fi
+
+          combined=0
+          while IFS= read -r rel; do
+            arm_file="universal/Zaply-arm64.app/$rel"
+            intel_file="universal/x86/Zaply.app/$rel"
+            if [ -f "$arm_file" ] && file "$arm_file" | grep -q "Mach-O"; then
+              mode="$(stat -f %Lp "$arm_file")"
+              lipo -create "$arm_file" "$intel_file" -output "universal/Zaply.app/$rel"
+              chmod "$mode" "universal/Zaply.app/$rel"
+              archs="$(lipo -info "universal/Zaply.app/$rel")"
+              echo "$rel -> $archs"
+              case "$archs" in
+                *arm64*x86_64*|*x86_64*arm64*) ;;
+                *) echo "Combined file is not universal: $rel" >&2; exit 1 ;;
+              esac
+              combined=$((combined + 1))
+            fi
+          done < universal/files-arm64.txt
+          echo "Combined $combined Mach-O files into universal binaries."
+          if [ "$combined" -lt 3 ]; then
+            echo "Expected at least the editor, the command-line tool and the git helper to be combined." >&2
+            exit 1
+          fi
+
+      - name: Verify the universal bundle (deployment target on both slices)
+        run: |
+          set -euo pipefail
+          APP_PATH="universal/Zaply.app"
+          echo "LSMinimumSystemVersion in Info.plist:"
+          /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' \
+            "$APP_PATH/Contents/Info.plist" || echo "(not set in Info.plist)"
+          for binary in zaply cli; do
+            echo "Architectures in Contents/MacOS/$binary:"
+            lipo -info "$APP_PATH/Contents/MacOS/$binary"
+            for arch in arm64 x86_64; do
+              lipo "$APP_PATH/Contents/MacOS/$binary" -thin "$arch" -output "/tmp/zaply-$binary-$arch"
+              MINOS="$(vtool -show-build "/tmp/zaply-$binary-$arch" | awk '/minos/ {print $2; exit}')"
+              echo "$binary ($arch) records a minimum macOS version of $MINOS"
+              if [ "$MINOS" != "12.0" ]; then
+                echo "Expected a deployment target of 12.0 but the $arch slice of $binary records $MINOS" >&2
+                exit 1
+              fi
+            done
+          done
+          # The bundled git helper is a third-party binary with its own
+          # minimum version; report it for visibility but do not gate on it.
+          echo "Architectures in Contents/MacOS/git:"
+          lipo -info "$APP_PATH/Contents/MacOS/git" || true
+          for arch in arm64 x86_64; do
+            if lipo "$APP_PATH/Contents/MacOS/git" -thin "$arch" -output "/tmp/zaply-git-$arch" 2>/dev/null; then
+              echo "git ($arch) minimum macOS version: $(vtool -show-build "/tmp/zaply-git-$arch" | awk '/minos/ {print $2; exit}')"
+            fi
+          done
+
+      - name: Re-sign the universal bundle and run the command-line tool
+        run: |
+          set -euo pipefail
+          APP_PATH="$PWD/universal/Zaply.app"
+          ENTITLEMENTS="$APP_PATH/Contents/Resources/zaply.entitlements"
+          if [ ! -f "$ENTITLEMENTS" ]; then
+            ENTITLEMENTS="crates/zaply/resources/zaply.entitlements"
+          fi
+          codesign --force --deep --entitlements "$ENTITLEMENTS" --sign - "$APP_PATH" -v
+          codesign --verify --deep --strict "$APP_PATH"
+          echo "Command-line tool version:"
+          "$APP_PATH/Contents/MacOS/cli" --version
+
+      - name: Probe whether the universal app launches and stays alive
+        continue-on-error: true
+        run: |
+          APP_PATH="$PWD/universal/Zaply.app"
+          open "$APP_PATH"
+          sleep 15
+          if pgrep -f "Zaply.app/Contents/MacOS" > /dev/null; then
+            echo "Zaply launched and was still running after 15 seconds."
+          else
+            echo "Zaply did not appear to be running after 15 seconds."
+            exit 1
+          fi
+          pkill -f "Zaply.app/Contents/MacOS" || true
+
+      - name: Create the universal DMG
+        run: |
+          set -euo pipefail
+          mkdir -p universal/dmg
+          cp -R universal/Zaply.app universal/dmg/
+          ln -s /Applications universal/dmg/Applications
+          hdiutil create -volname Zaply -srcfolder universal/dmg -ov -format UDZO universal/Zaply-universal.dmg
+          ls -lh universal/Zaply-universal.dmg
+
+      - name: Upload the universal DMG as a workflow artifact (manual and branch runs)
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
-          name: zaply-macos-${{ matrix.target }}-dmg
-          path: target/${{ matrix.target }}/release/Zaply-*.dmg
+          name: zaply-macos-universal-dmg
+          path: universal/Zaply-universal.dmg
           retention-days: 3
 
-      - name: Publish the DMG on the GitHub release (version tags)
+      - name: Publish the universal DMG on the GitHub release (version tags)
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$GITHUB_REF_NAME" \
-            target/${{ matrix.target }}/release/Zaply-*.dmg --clobber \
+            universal/Zaply-universal.dmg --clobber \
           || gh release create "$GITHUB_REF_NAME" \
             --title "Zaply $GITHUB_REF_NAME" \
-            --notes "Zaply $GITHUB_REF_NAME. Download the .deb, AppImage or tar.gz for Linux, the DMG for macOS (12 or newer, unsigned), or the installer for Windows (10 or newer, unsigned). See the README for install instructions." \
-            target/${{ matrix.target }}/release/Zaply-*.dmg
+            --notes "Zaply $GITHUB_REF_NAME. Download the .deb, AppImage or tar.gz for Linux, the universal DMG for macOS (12 or newer, runs on Apple silicon and Intel, unsigned), or the installer for Windows (10 or newer, unsigned). See the README for install instructions." \
+            universal/Zaply-universal.dmg
