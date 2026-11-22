@@ -732,9 +732,7 @@ mod test {
         assert_eq!(
             devcontainer.customizations,
             Some(ZaplyCustomizationsWrapper {
-                zaply: ZaplyCustomization {
-                    extensions: vec!["vue".to_string(), "ruby".to_string()]
-                }
+                zaply: ZaplyCustomization {}
             })
         );
     }
@@ -763,7 +761,7 @@ mod test {
         assert_eq!(
             devcontainer.customizations,
             Some(ZaplyCustomizationsWrapper {
-                zaply: ZaplyCustomization { extensions: vec![] }
+                zaply: ZaplyCustomization {}
             })
         );
     }
@@ -1015,9 +1013,7 @@ mod test {
                     mount_type: Some("bind".to_string())
                 }),
                 customizations: Some(ZaplyCustomizationsWrapper {
-                    zaply: ZaplyCustomization {
-                        extensions: vec!["html".to_string()]
-                    }
+                    zaply: ZaplyCustomization {}
                 }),
                 ..Default::default()
             }

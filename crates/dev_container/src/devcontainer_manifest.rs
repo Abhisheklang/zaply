@@ -2472,7 +2472,6 @@ RUN sed -i -E 's/((^|\s)PATH=)([^\$]*)$/\1\${PATH:-\3}/g' /etc/profile || true
                 container_id: docker_ps.id,
                 remote_user: remote_user,
                 remote_workspace_folder: remote_folder.display().to_string(),
-                extension_ids: self.extension_ids(),
                 remote_env,
             };
 
@@ -3973,7 +3972,6 @@ mod test {
             container_id: "container".to_string(),
             remote_user: "root".to_string(),
             remote_workspace_folder: "/workspaces/project".to_string(),
-            extension_ids: Vec::new(),
             remote_env: HashMap::new(),
         };
 
@@ -4612,11 +4610,6 @@ RUN echo "export HISTFILE=/home/$USERNAME/commandhistory/.bash_history" >> "/hom
         devcontainer_manifest.parse_nonremote_vars().unwrap();
 
         let devcontainer_up = devcontainer_manifest.build_and_run().await.unwrap();
-
-        assert_eq!(
-            devcontainer_up.extension_ids,
-            vec!["vue".to_string(), "ruby".to_string()]
-        );
 
         let files = test_dependencies.fs.files();
         let feature_dockerfile = files
@@ -6332,11 +6325,6 @@ RUN echo "export HISTFILE=/home/$USERNAME/commandhistory/.bash_history" >> "/hom
         devcontainer_manifest.parse_nonremote_vars().unwrap();
 
         let devcontainer_up = devcontainer_manifest.build_and_run().await.unwrap();
-
-        assert_eq!(
-            devcontainer_up.extension_ids,
-            vec!["vue".to_string(), "ruby".to_string()]
-        );
 
         let files = test_dependencies.fs.files();
         let feature_dockerfile = files
