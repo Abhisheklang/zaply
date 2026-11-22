@@ -4,7 +4,7 @@ mod tables;
 
 use crate::{Error, Result};
 use anyhow::{Context as _, anyhow};
-use collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use collections::{BTreeMap, HashMap, HashSet};
 use dashmap::DashMap;
 use futures::StreamExt;
 use project_repository_statuses::StatusKind;
@@ -19,9 +19,7 @@ use sea_orm::{
     entity::prelude::*,
     sea_query::{Alias, Expr, OnConflict},
 };
-use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::ops::RangeInclusive;
 use std::{
     future::Future,
     marker::PhantomData,

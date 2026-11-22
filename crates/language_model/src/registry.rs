@@ -672,6 +672,4 @@ mod tests {
             assert!(registry.inline_assistant_model().is_none());
         });
     }
-
-    #[gpui::test]
 }
