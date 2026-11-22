@@ -89,6 +89,13 @@ All changes are dated 2026-11-21 and are summarised here:
   large-file open, and project search; BENCHMARKS.md records the
   measured results; Enable Low-End Hardware Mode and Enable Large
   Monorepo Mode actions apply named settings profiles.
+- Extension store (2026-11-22): the store now browses and installs extensions from
+  Zed's public extension API, used as-is at the owner's direction, and
+  the Extensions view carries a "Powered by Zed" label. The store is
+  the only feature that talks to that service; it uses a dedicated API
+  base that is independent of the configured server URL, and no other
+  hosted feature (accounts, collaboration, cloud models, edit
+  predictions, telemetry) was restored.
 
 ## Changed files
 

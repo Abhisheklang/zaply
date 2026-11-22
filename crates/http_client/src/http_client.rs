@@ -223,6 +223,14 @@ impl HttpClient for HttpClientWithProxy {
     }
 }
 
+/// The base URL of the public extension store API.
+///
+/// The extension store is served by Zed's public extension API, which
+/// Zaply uses as-is so that users can browse and install extensions.
+/// This is deliberately independent of the configured server URL: the
+/// extension store is the only feature that talks to that service.
+pub const EXTENSION_API_BASE_URL: &str = "https://api.zed.dev";
+
 /// An [`HttpClient`] that has a base URL.
 pub struct HttpClientWithUrl {
     base_url: Mutex<String>,
@@ -283,6 +291,18 @@ impl HttpClientWithUrl {
 
         Ok(Url::parse_with_params(
             &format!("{}{}", base_api_url, path),
+            query,
+        )?)
+    }
+
+    /// Builds a URL for the public extension store API.
+    ///
+    /// Unlike [`Self::build_zaply_api_url`], this does not derive from
+    /// the configured server URL; it always points at
+    /// [`EXTENSION_API_BASE_URL`], the public extension store service.
+    pub fn build_extension_api_url(&self, path: &str, query: &[(&str, &str)]) -> Result<Url> {
+        Ok(Url::parse_with_params(
+            &format!("{}{}", EXTENSION_API_BASE_URL, path),
             query,
         )?)
     }
