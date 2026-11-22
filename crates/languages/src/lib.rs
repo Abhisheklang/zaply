@@ -226,6 +226,41 @@ pub fn init(languages: Arc<LanguageRegistry>, fs: Arc<dyn Fs>, node: NodeRuntime
             name: "zaply-keybind-context",
             ..Default::default()
         },
+        LanguageInfo {
+            name: "html",
+            adapters: vec![],
+            ..Default::default()
+        },
+        LanguageInfo {
+            name: "glsl",
+            adapters: vec![],
+            ..Default::default()
+        },
+        LanguageInfo {
+            name: "proto",
+            adapters: vec![],
+            ..Default::default()
+        },
+        LanguageInfo {
+            name: "java",
+            adapters: vec![],
+            ..Default::default()
+        },
+        LanguageInfo {
+            name: "gradle",
+            adapters: vec![],
+            ..Default::default()
+        },
+        LanguageInfo {
+            name: "gradle-kts",
+            adapters: vec![],
+            ..Default::default()
+        },
+        LanguageInfo {
+            name: "properties",
+            adapters: vec![],
+            ..Default::default()
+        },
     ];
 
     for registration in built_in_languages {
