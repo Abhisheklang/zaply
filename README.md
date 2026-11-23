@@ -115,6 +115,23 @@ curl -fsSL https://raw.githubusercontent.com/Abhisheklang/zaply/main/install.sh 
 
 Or download `install.sh` from this repository and run it directly. Re-running it upgrades Zaply in place.
 
+## Install Zaply on macOS
+
+Download `Zaply-universal.dmg` from the [releases page](https://github.com/Abhisheklang/zaply/releases), open it, and drag Zaply into your Applications folder. The universal build runs on both Apple silicon and Intel Macs, macOS 12 or later.
+
+### First launch on macOS
+
+Zaply is not notarized by Apple, so the first time you open it, macOS may say "Zaply can't be opened because Apple cannot check it for malicious software." That is expected for an open source build distributed outside the App Store. To open it:
+
+1. Right-click Zaply in Applications and choose Open, then confirm. If your macOS does not offer an Open button, open System Settings, go to Privacy & Security, and click Open Anyway next to the Zaply message.
+2. If macOS still refuses, or says the app is damaged, run this in Terminal and then open Zaply normally:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Zaply.app
+```
+
+You only need to do this once.
+
 ## Build Zaply from source
 
 To build the fast code editor from source on Linux:
