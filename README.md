@@ -132,6 +132,19 @@ xattr -dr com.apple.quarantine /Applications/Zaply.app
 
 You only need to do this once.
 
+## Install Zaply on Windows
+
+Download `Zaply-x86_64.exe` from the [releases page](https://github.com/Abhisheklang/zaply/releases) and run the installer. Windows 10 or later.
+
+### First run on Windows
+
+The Zaply installer is not code-signed, so Windows Defender SmartScreen may stop it with "Windows protected your PC" and "Microsoft Defender SmartScreen prevented an unrecognized app from starting." That is expected for an open source build distributed outside the Microsoft Store. To continue:
+
+1. Click **More info** in the SmartScreen dialog.
+2. Click **Run anyway**.
+
+The installer then runs normally. You only need to do this once.
+
 ## Build Zaply from source
 
 To build the fast code editor from source on Linux:
