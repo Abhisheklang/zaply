@@ -204,3 +204,9 @@ Bug reports and pull requests are welcome on [GitHub Issues](https://github.com/
 Zaply is free and open source software, licensed under the GNU General Public License, version 3 or later (GPL-3.0-or-later). Some bundled libraries in this repository are under the Apache License 2.0 or the MIT License, as noted in their respective LICENSE files.
 
 Attribution: Zaply is a fork of the Zed code editor, originally created by Zed Industries, Inc. The upstream copyright and licence notices are preserved in the LICENSE and NOTICE files in this repository, as the GPL requires. A list of the files changed in the fork is kept in [MODIFICATIONS.md](MODIFICATIONS.md).
+
+### An honest note from the author
+
+Zaply is, plainly, a clone of Zed with a new name. I built it for fun, and to learn how a real code editor works from the inside and what it takes to ship one on Linux, Windows and macOS. Nothing more. It is not trying to compete with Zed or replace it.
+
+What I actually changed: the name and branding, removing the accounts, sign-in, telemetry and extension system, an agent safety layer with an audit log, wider support for older Linux systems, and the release packaging for the three platforms. The editor itself, the part that matters, is Zed's work, and the credit for it belongs to the Zed team and its contributors. If you want the original, actively developed editor, use Zed.
