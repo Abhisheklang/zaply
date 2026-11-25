@@ -1361,20 +1361,33 @@ impl SettingsPageItem {
                         .justify_between()
                         .map(apply_padding)
                         .child(
-                            v_flex()
-                                .relative()
-                                .w_full()
+                            h_flex()
+                                .gap_2()
+                                .items_center()
+                                .min_w_0()
                                 .max_w_1_2()
-                                .child(Label::new(action_link.title.clone()))
-                                .when_some(
-                                    action_link.description.as_ref(),
-                                    |this, description| {
-                                        this.child(
-                                            Label::new(description.clone())
-                                                .size(LabelSize::Small)
-                                                .color(Color::Muted),
-                                        )
-                                    },
+                                .when_some(action_link.icon, |this, icon| {
+                                    this.child(
+                                        Icon::new(icon)
+                                            .size(IconSize::Small)
+                                            .color(Color::Muted),
+                                    )
+                                })
+                                .child(
+                                    v_flex()
+                                        .relative()
+                                        .w_full()
+                                        .child(Label::new(action_link.title.clone()))
+                                        .when_some(
+                                            action_link.description.as_ref(),
+                                            |this, description| {
+                                                this.child(
+                                                    Label::new(description.clone())
+                                                        .size(LabelSize::Small)
+                                                        .color(Color::Muted),
+                                                )
+                                            },
+                                        ),
                                 ),
                         )
                         .child(
@@ -1701,6 +1714,7 @@ impl PartialEq for SubPageLink {
 #[derive(Clone)]
 struct ActionLink {
     title: SharedString,
+    icon: Option<IconName>,
     description: Option<SharedString>,
     button_text: SharedString,
     on_click: Arc<dyn Fn(&mut SettingsWindow, &mut Window, &mut App) + Send + Sync>,
@@ -7597,6 +7611,7 @@ pub mod test {
     fn test_action_link(title: &'static str, description: Option<String>) -> SettingsPageItem {
         SettingsPageItem::ActionLink(ActionLink {
             title: SharedString::from(title),
+            icon: None,
             description: description.map(SharedString::from),
             button_text: SharedString::from("Change"),
             on_click: Arc::new(|_, _, _| {}),

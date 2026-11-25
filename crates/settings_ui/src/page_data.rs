@@ -7,7 +7,7 @@ use settings::{
 use std::sync::{Arc, OnceLock};
 use strum::{EnumMessage, IntoDiscriminant as _, VariantArray};
 use theme::SystemAppearance;
-use ui::IntoElement;
+use ui::{IconName, IntoElement};
 
 use crate::{
     ActionLink, DynamicItem, PROJECT, SettingField, SettingItem, SettingsFieldMetadata,
@@ -521,7 +521,8 @@ fn general_page(cx: &App) -> SettingsPage {
         [
             SettingsPageItem::SectionHeader("About"),
             SettingsPageItem::ActionLink(ActionLink {
-                title: "Developed by Abhisheklang".into(),
+                title: "GitHub".into(),
+                icon: Some(IconName::Github),
                 description: None,
                 button_text: "GitHub Profile".into(),
                 on_click: Arc::new(|_settings_window, _window, cx| {
@@ -1689,6 +1690,7 @@ fn keymap_page() -> SettingsPage {
             SettingsPageItem::SectionHeader("Keybindings"),
             SettingsPageItem::ActionLink(ActionLink {
                 title: "Edit Keybindings".into(),
+                icon: None,
                 description: Some("Customize keybindings in the keymap editor.".into()),
                 button_text: "Open Keymap".into(),
                 on_click: Arc::new(|settings_window, window, cx| {
@@ -9018,6 +9020,7 @@ fn collaboration_page() -> SettingsPage {
         [
             SettingsPageItem::ActionLink(ActionLink {
                 title: "Test Audio".into(),
+                icon: None,
                 description: Some("Test your microphone and speaker setup".into()),
                 button_text: "Test Audio".into(),
                 on_click: Arc::new(|_settings_window, window, cx| {
